@@ -1,217 +1,203 @@
 import os
 import logging
-import json 
-from telegram import Update, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+import json
+import asyncio
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 import firebase_admin
 from firebase_admin import credentials, firestore
-from firebase_admin import db 
 
-# Logging সেটআপ
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# ==========================================
+# ১. কনফিগারেশন এবং সেটআপ
+# ==========================================
 
-# ====================================================================
-# A. কনফিগারেশন ভ্যারিয়েবল লোড ও Firebase ইনিশিয়ালাইজেশন 
-# ====================================================================
+# লগিং সেটআপ (ত্রুটি দেখার জন্য)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# 1. টেলিগ্রাম কনফিগারেশন (আপনার টোকেন সরাসরি বসানো হয়েছে)
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8406630077:AAEx91ea3QBjF1b1HufHmYkk72t6xtypRd0") # ✅ আপনার টোকেন
-ADMIN_USER_ID = int(os.environ.get("ADMIN_USER_ID", "7870088579")) 
-ADMIN_GROUP_CHAT_ID = os.environ.get("ADMIN_GROUP_CHAT_ID", "-5054092329") 
-
-# 2. Firebase কনফিগারেশন (সুরক্ষিত পদ্ধতি: JSON স্ট্রিং Environment Variable থেকে নেবে)
-FIREBASE_CONFIG_JSON = os.environ.get("FIREBASE_SERVICE_ACCOUNT") 
-REALTIME_DATABASE_URL = "https://telegram-bot-skyzone-it-default-rtdb.firebaseio.com"
-
-db = None # Firestore ক্লায়েন্ট
-rtdb = None # Realtime DB ক্লায়েন্ট
-
-if FIREBASE_CONFIG_JSON:
-    try:
-        # JSON স্ট্রিং লোড করে প্রমাণীকরণ
-        cred_dict = json.loads(FIREBASE_CONFIG_JSON)
-        cred = credentials.Certificate(cred_dict)
-        
-        # Realtime Database URL যোগ করে Firebase Initialize করা
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': REALTIME_DATABASE_URL
-        })
-        
-        db = firestore.client() # Firestore ক্লায়েন্ট
-        rtdb = firebase_admin.db.reference() # Realtime DB ক্লায়েন্ট
-
-        logging.info("Firebase Successfully Initialized with both DBs.")
-    except Exception as e:
-        logging.error(f"Error initializing Firebase: {e}")
-        db = None
-        rtdb = None
-else:
-    logging.error("FIREBASE_SERVICE_ACCOUNT environment variable not found. Check hosting settings.")
-    db = None
-    rtdb = None
-
-# 3. হোস্টিং কনফিগারেশন (Render/Railway এর জন্য Webhook)
+# এনভায়রনমেন্ট ভেরিয়েবল থেকে তথ্য নেওয়া
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # আপনার বটের টোকেন
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")  # আপনার টেলিগ্রাম আইডি
+FIREBASE_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT") # ফায়ারবেস JSON টেক্সট
 PORT = int(os.environ.get('PORT', 8080))
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL', 'YOUR_RENDER_APP_URL')
+WEBHOOK_URL = os.getenv("WEBHOOK_URL") # রেন্ডার বা হোস্টিং সাইটের লিঙ্ক
 
-# 4. লিঙ্ক কনফিগারেশন (আপনার দেওয়া লিঙ্কগুলো)
+# ফায়ারবেস ইনিশিয়ালাইজেশন
+db = None
+try:
+    if FIREBASE_JSON:
+        cred_info = json.loads(FIREBASE_JSON)
+        cred = credentials.Certificate(cred_info)
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        logger.info("✅ Firebase Connected Successfully!")
+    else:
+        logger.warning("⚠️ FIREBASE_SERVICE_ACCOUNT not found! Database features won't work.")
+except Exception as e:
+    logger.error(f"❌ Firebase Error: {e}")
+
+# লিংক এবং টেক্সট কনফিগারেশন
 LINKS = {
     "REVIEW_GEN": "https://sites.google.com/view/review-generator/home",
-    "FB_GROUP": "https://www.facebook.com/groups/1853319645292519/?ref=share&mibextid=NSMWBT",
-    "TG_CHANNEL_PAYMENT": "https://t.me/brotheritltd",
-    "ADMIN_USERNAME": "@AfMdshakil",
-    # বাকি লিঙ্কগুলো এখানে যোগ হবে
+    "FB_GROUP": "https://www.facebook.com/groups/YOUR_GROUP_ID",
+    "SUPPORT": "@AfMdshakil",
 }
 
-# 5. প্রাথমিক সেটিংস
-INITIAL_REFERRAL_BONUS = 50 
-COLLECTION_USERS = "users"
-COLLECTION_SUBMISSIONS = "submissions"
+# ==========================================
+# ২. ডাটাবেস ফাংশন
+# ==========================================
 
-# ====================================================================
-# B. Firebase ডেটাবেস ফাংশন (Core Logic)
-# ====================================================================
-
-# ইউজার অ্যাকাউন্টের স্ট্যাটাস চেক/তৈরি
-async def get_or_create_user(user_id, username, first_name):
+async def check_user_db(user):
+    """ইউজার ডাটাবেসে আছে কিনা চেক করে, না থাকলে তৈরি করে"""
     if db is None:
         return None
     
-    user_ref = db.collection(COLLECTION_USERS).document(str(user_id))
-    user_data = user_ref.get().to_dict()
+    user_ref = db.collection("users").document(str(user.id))
+    doc = user_ref.get()
     
-    if user_data:
-        if user_data.get('is_blocked', False):
-            return {"status": "blocked"}
-        return {"status": "exists", "data": user_data}
+    if doc.exists:
+        data = doc.to_dict()
+        if data.get("is_blocked", False):
+            return "BLOCKED"
+        return "EXISTS"
     else:
+        # নতুন ইউজার তৈরি
         new_user = {
-            'user_id': user_id,
-            'username': username,
-            'first_name': first_name,
-            'balance': 0,
-            'referred_by': None,
-            'joined_at': firestore.SERVER_TIMESTAMP,
-            'is_blocked': False
+            "user_id": user.id,
+            "first_name": user.first_name,
+            "username": user.username,
+            "balance": 0.0,
+            "joined_at": firestore.SERVER_TIMESTAMP,
+            "is_blocked": False
         }
         user_ref.set(new_user)
-        return {"status": "created", "data": new_user}
+        return "CREATED"
 
-# ব্যালেন্স আপডেট
-async def update_balance(user_id, amount):
-    if db is None:
-        return False
-    
-    user_ref = db.collection(COLLECTION_USERS).document(str(user_id))
-    user_ref.update({'balance': firestore.Increment(amount)})
-    return True
+async def get_balance(user_id):
+    """ইউজারের ব্যালেন্স চেক করা"""
+    if db is None: return 0.0
+    doc = db.collection("users").document(str(user_id)).get()
+    if doc.exists:
+        return doc.to_dict().get("balance", 0.0)
+    return 0.0
 
-# ====================================================================
-# C. ইউজার কমান্ড ও হ্যান্ডেলার (User Handlers)
-# ====================================================================
+# ==========================================
+# ৩. ইউজার হ্যান্ডেলার (কমান্ড)
+# ==========================================
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    user_id = user.id
-    username = user.username if user.username else 'N/A'
-    first_name = user.first_name
-
-    # 1. ইউজার ডেটা চেক ও তৈরি
-    result = await get_or_create_user(user_id, username, first_name)
     
-    if result and result.get("status") == "blocked":
-        await update.message.reply_text("দুঃখিত! আপনাকে বট ব্যবহার থেকে ব্লক করা হয়েছে।")
+    # ডাটাবেস চেক
+    status = await check_user_db(user)
+    
+    if status == "BLOCKED":
+        await update.message.reply_text("🚫 দুঃখিত! আপনাকে ব্যান করা হয়েছে।")
         return
 
-    # 2. ইসলামিক সালাম ও স্বাগত বার্তা
-    if result and result.get("status") == "created":
-        welcome_message = f"আসসালামু আলাইকুম, **{first_name}**! 👋\n\nSkyzone IT বট-এ আপনাকে স্বাগতম। আপনি স্বয়ংক্রিয়ভাবে নিবন্ধিত হয়েছেন।"
-    else:
-        welcome_message = f"আসসালামু আলাইকুম, **{first_name}**! 👋\n\nপ্রধান মেনু থেকে কাজ শুরু করুন।"
-
-    # 3. মূল মেনু বাটন তৈরি
-    keyboard = [
-        [InlineKeyboardButton("💰 কাজ জমা দিন", callback_data="submit_work")],
-        [InlineKeyboardButton("👤 আমার অ্যাকাউন্ট", callback_data="show_account"),
-         InlineKeyboardButton("📚 কাজের বিবরণ", callback_data="show_guide")],
-        [InlineKeyboardButton("🔗 সব লিংক", callback_data="show_links")],
-        [InlineKeyboardButton("🌐 রিভিউ জেনারেটর", url=LINKS['REVIEW_GEN'])]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        welcome_message,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+    welcome_text = (
+        f"আসসালামু আলাইকুম, <b>{user.first_name}</b>! 👋\n\n"
+        "Skyzone IT বটে আপনাকে স্বাগতম। নিচের মেনু থেকে অপশন সিলেক্ট করুন:"
     )
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == "submit_work":
-        await query.edit_message_text(text="কাজ জমা দেওয়ার প্রক্রিয়া শুরু হয়েছে।\n\nপ্রথমে আপনার **স্ক্রিনশট লিংকটি** দিন।")
-    
-    elif query.data == "show_account":
-        user_id = query.from_user.id
-        await query.edit_message_text(text=f"👤 **আপনার অ্যাকাউন্ট**\n\nবর্তমান ব্যালেন্স: 0 BDT (ডেটাবেস থেকে আসবে)\nরেফারেল লিংক: <আপনার রেফারেল লিংক>")
-    
-    elif query.data == "show_links":
-        links_text = f"🌐 **গুরুত্বপূর্ণ লিংক সমূহ:**\n\n"
-        links_text += f"১. ফেসবুক গ্রুপ: {LINKS['FB_GROUP']}\n"
-        links_text += f"২. পেমেন্ট প্রমাণ চ্যানেল: {LINKS['TG_CHANNEL_PAYMENT']}\n"
-        links_text += f"৩. অ্যাডমিনের সাথে যোগাযোগ: {LINKS['ADMIN_USERNAME']}\n"
-        
-        await query.edit_message_text(text=links_text)
-
-# ====================================================================
-# D. অ্যাডমিন কমান্ড (Admin Handlers)
-# ====================================================================
-
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_user.id != ADMIN_USER_ID:
-        await update.message.reply_text("🚫 আপনি অ্যাডমিন নন। এই কমান্ডটি আপনার জন্য নয়।")
-        return
-    
-    # অ্যাডমিন প্যানেল মেনু তৈরি
+    # বাটন মেনু
     keyboard = [
-        [InlineKeyboardButton("👥 ইউজার সংখ্যা দেখুন", callback_data="admin_user_count"),
-         InlineKeyboardButton("📢 গণবার্তা পাঠান", callback_data="admin_broadcast")],
-        [InlineKeyboardButton("💰 রেফারেল বোনাস সেট করুন", callback_data="admin_set_referral")],
-        [InlineKeyboardButton("🗑️ ইউজার ব্লক/ডিলিট", callback_data="admin_manage_user")]
+        [InlineKeyboardButton("💰 কাজ জমা দিন", callback_data="submit_work")],
+        [InlineKeyboardButton("👤 প্রোফাইল", callback_data="my_profile"),
+         InlineKeyboardButton("📚 হেল্প", callback_data="help_guide")],
+        [InlineKeyboardButton("🌐 রিভিউ জেনারেটর", url=LINKS["REVIEW_GEN"])]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='HTML')
+
+async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer() # লোডিং আইকন বন্ধ করার জন্য
     
-    await update.message.reply_text("👑 **অ্যাডমিন প্যানেল**\n\nদয়া করে অপশন নির্বাচন করুন:", reply_markup=reply_markup)
+    data = query.data
+    user_id = query.from_user.id
 
-# ====================================================================
-# E. প্রধান রান ফাংশন (Main Function)
-# ====================================================================
+    if data == "submit_work":
+        await query.edit_message_text("📸 অনুগ্রহ করে আপনার কাজের স্ক্রিনশট বা লিংক এখানে পেস্ট করুন।")
+        # এখানে আপনি পরবর্তীতে MessageHandler যুক্ত করতে পারেন ইনপুট নেওয়ার জন্য।
 
-def main() -> None:
-    """বট অ্যাপ্লিকেশন শুরু করে"""
+    elif data == "my_profile":
+        bal = await get_balance(user_id)
+        text = (
+            f"👤 <b>আপনার প্রোফাইল</b>\n\n"
+            f"🆔 আইডি: <code>{user_id}</code>\n"
+            f"💰 ব্যালেন্স: {bal} BDT\n"
+            f"🔗 স্ট্যাটাস: একটিভ"
+        )
+        # ব্যাক বাটন
+        back_btn = [[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(back_btn), parse_mode='HTML')
+
+    elif data == "help_guide":
+        text = (
+            f"❓ <b>সাহায্য কেন্দ্র</b>\n\n"
+            f"যে কোনো সমস্যার জন্য যোগাযোগ করুন:\n"
+            f"👨‍💻 অ্যাডমিন: {LINKS['SUPPORT']}\n"
+            f"ফেসবুক গ্রুপ: <a href='{LINKS['FB_GROUP']}'>এখানে ক্লিক করুন</a>"
+        )
+        back_btn = [[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(back_btn), parse_mode='HTML', disable_web_page_preview=True)
+
+    elif data == "back_to_main":
+        # আবার মেইন মেনু দেখানো
+        await start(update, context)
+
+# ==========================================
+# ৪. অ্যাডমিন হ্যান্ডেলার
+# ==========================================
+
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    
+    # শুধু অ্যাডমিন এক্সেস পাবে
+    if str(ADMIN_USER_ID) != user_id:
+        return # চুপচাপ ইগনোর করবে অথবা এরর মেসেজ দিতে পারেন
+
+    keyboard = [
+        [InlineKeyboardButton("📊 ইউজার লিস্ট", callback_data="admin_users")],
+        [InlineKeyboardButton("📢 ব্রডকাস্টিং", callback_data="admin_broadcast")]
+    ]
+    await update.message.reply_text("👑 <b>অ্যাডমিন প্যানেল</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+# ==========================================
+# ৫. মেইন রানার
+# ==========================================
+
+def main():
+    if not BOT_TOKEN:
+        print("❌ Error: BOT_TOKEN is missing!")
+        return
+
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # ইউজার কমান্ড
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CallbackQueryHandler(button_handler))
+    # হ্যান্ডেলার যোগ করা
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("admin", admin_panel))
+    application.add_handler(CallbackQueryHandler(button_click))
 
-    # অ্যাডমিন কমান্ড
-    application.add_handler(CommandHandler("admin", admin_command))
-    
-    # ⚠️ Webhook সেটআপ (24/7 লাইভ রাখার জন্য)
-    if WEBHOOK_URL and WEBHOOK_URL != 'YOUR_RENDER_APP_URL':
+    # সার্ভার কনফিগারেশন (Webhook vs Polling)
+    if WEBHOOK_URL:
+        # সার্ভারে (যেমন Render/Railway) চলার জন্য
+        print(f"🚀 Starting Webhook on Port {PORT}...")
         application.run_webhook(
             listen="0.0.0.0",
             port=PORT,
             url_path=BOT_TOKEN,
             webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
         )
-        logging.info(f"Webhook set on port {PORT}")
     else:
-        # Polling মোড (টেস্টিং এর জন্য)
-        logging.warning("WEBHOOK_URL not set. Running in Polling mode (Not suitable for 24/7 Free hosting).")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # নিজের পিসিতে টেস্ট করার জন্য
+        print("🤖 Starting Polling (Local Mode)...")
+        application.run_polling()
 
 if __name__ == "__main__":
     main()
