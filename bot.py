@@ -1,11 +1,13 @@
 import os
 import logging
 import json
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
+# Firebase ক্লায়েন্ট ইমপোর্ট
 import firebase_admin
 from firebase_admin import credentials, firestore
-from firebase_admin import db as rtdb_admin_module # Realtime DB এর জন্য
+from firebase_admin import db as rtdb_admin_module
 
 # ==========================================
 # ১. কনফিগারেশন এবং সেটআপ
@@ -147,7 +149,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     # ৩. ডাটাবেস এরর মেসেজ (যদি থাকে)
     if result.get("status") == "NO_DB":
-        welcome_message += "\n\n⚠️ **সতর্কতা:** ডাটাবেস কানেকশন ব্যর্থ হয়েছে। অ্যাকাউন্ট ব্যালেন্স ও অন্যান্য ফিচার কাজ করবে না।"
+        welcome_message += "\n\n⚠️ <b>সতর্কতা:</b> ডাটাবেস কানেকশন ব্যর্থ হয়েছে। অ্যাকাউন্ট ব্যালেন্স ও অন্যান্য ফিচার কাজ করবে না।"
 
     # ৪. মূল মেনু বাটন তৈরি
     keyboard = [
@@ -174,15 +176,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # মেইন মেনুতে ফিরে যাওয়া
     if data == "back_to_main":
-        await start_command(update, context)
+        # এখানে start_command কল করা নিরাপদ নয়, তাই মেইন মেনু মেসেজটি আবার তৈরি করা হলো
+        first_name = query.from_user.first_name
+        
+        welcome_message = f"আসসালামু আলাইকুম, <b>{first_name}</b>! 👋\n\nপ্রধান মেনু থেকে কাজ শুরু করুন।"
+        
+        keyboard = [
+            [InlineKeyboardButton("💰 কাজ জমা দিন", callback_data="submit_work")],
+            [InlineKeyboardButton("👤 আমার অ্যাকাউন্ট", callback_data="show_account"),
+             InlineKeyboardButton("📚 কাজের বিবরণ", callback_data="show_guide")],
+            [InlineKeyboardButton("🔗 সব লিংক", callback_data="show_links")],
+            [InlineKeyboardButton("🌐 রিভিউ জেনারেটর", url=LINKS['REVIEW_GEN'])]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            welcome_message,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
         return
 
     if data == "submit_work":
-        await query.edit_message_text(text="কাজ জমা দেওয়ার প্রক্রিয়া শুরু হয়েছে।\n\nপ্রথমে আপনার **স্ক্রিনশট লিংকটি** দিন।")
+        await query.edit_message_text(text="কাজ জমা দেওয়ার প্রক্রিয়া শুরু হয়েছে।\n\nপ্রথমে আপনার <b>স্ক্রিনশট লিংকটি</b> দিন।", parse_mode='HTML')
     
     elif data == "show_account":
         balance = await get_balance(user_id)
-        db_status_text = "অনলাইন" if db else "অফলাইন"
+        db_status_text = "অনলাইন (🟢)" if db else "অফলাইন (🔴)"
         
         text = (
             f"👤 <b>আপনার অ্যাকাউন্ট</b>\n\n"
@@ -229,7 +249,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     
     if db is None:
-        await update.message.reply_text("⚠️ **অ্যাডমিন প্যানেল:** ডাটাবেস কানেকশন নেই, কোনো ফিচার কাজ করবে না।")
+        await update.message.reply_text("⚠️ <b>অ্যাডমিন প্যানেল:</b> ডাটাবেস কানেকশন নেই, কোনো ফিচার কাজ করবে না।", parse_mode='HTML')
         return
 
     # অ্যাডমিন প্যানেল মেনু তৈরি
@@ -250,9 +270,12 @@ def main() -> None:
     """বট অ্যাপ্লিকেশন শুরু করে"""
     if not BOT_TOKEN:
         logger.error("❌ Error: BOT_TOKEN is missing! Please set the environment variable.")
-        return # টোকেন না থাকলে প্রোগ্রাম বন্ধ হবে
+        return 
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    # >>> V20 ফিক্স: এটি পুরাতন Updater এররটি ঠিক করবে <<<
+    defaults = ContextTypes.DEFAULT_TYPE(allow_update_types=Update.ALL_TYPES)
+    
+    application = Application.builder().token(BOT_TOKEN).context_types(defaults).build()
 
     # ইউজার কমান্ড
     application.add_handler(CommandHandler("start", start_command))
@@ -261,7 +284,7 @@ def main() -> None:
     # অ্যাডমিন কমান্ড
     application.add_handler(CommandHandler("admin", admin_command))
     
-    # Webhook সেটআপ (24/7 লাইভ রাখার জন্য)
+    # Webhook সেটআপ
     if WEBHOOK_URL:
         logger.info(f"🚀 Starting Webhook on Port {PORT}...")
         application.run_webhook(
@@ -271,7 +294,7 @@ def main() -> None:
             webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
         )
     else:
-        # Polling মোড (টেস্টিং এর জন্য)
+        # Polling মোড
         logger.warning("⚠️ WEBHOOK_URL not set. Running in Polling mode.")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
