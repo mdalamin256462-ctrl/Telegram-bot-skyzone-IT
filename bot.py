@@ -4,11 +4,7 @@ import json
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 # ContextTypes ইমপোর্ট নিশ্চিত করা হয়েছে
-from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler 
-# Firebase ক্লায়েন্ট ইমপোর্ট
-import firebase_admin
-from firebase_admin import credentials, firestore
-from firebase_admin import db as rtdb_admin_module
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 
 # ==========================================
 # ১. কনফিগারেশন এবং সেটআপ
@@ -74,6 +70,9 @@ LINKS = {
 COLLECTION_USERS = "users"
 COLLECTION_SUBMISSIONS = "submissions"
 
+# ফ্লো স্টেটস (কাজ জমা দেওয়ার জন্য)
+STATE_AWAITING_LINK = 1
+
 # ==========================================
 # ২. ডাটাবেস ফাংশন (Core Logic)
 # ==========================================
@@ -99,7 +98,8 @@ async def get_or_create_user(user_id, username, first_name):
             'balance': 0.0,
             'referred_by': None,
             'joined_at': firestore.SERVER_TIMESTAMP,
-            'is_blocked': False
+            'is_blocked': False,
+            'state': 0 # স্টেট যোগ করা হলো
         }
         user_ref.set(new_user)
         return {"status": "created", "data": new_user}
@@ -127,6 +127,28 @@ async def get_balance(user_id):
         return doc.to_dict().get("balance", 0.0)
     return 0.0
 
+# ইউজার স্টেট আপডেট
+async def update_user_state(user_id, state):
+    """ইউজারের কনভারসেশন স্টেট আপডেট করে"""
+    if db is None: return
+    try:
+        user_ref = db.collection(COLLECTION_USERS).document(str(user_id))
+        user_ref.update({'state': state})
+    except Exception as e:
+        logger.error(f"Error updating state for {user_id}: {e}")
+
+# ইউজার স্টেট পাওয়া
+async def get_user_state(user_id):
+    """ইউজারের কনভারসেশন স্টেট পায়"""
+    if db is None: return 0
+    try:
+        doc = db.collection(COLLECTION_USERS).document(str(user_id)).get()
+        if doc.exists:
+            return doc.to_dict().get("state", 0)
+    except Exception as e:
+        logger.error(f"Error getting state for {user_id}: {e}")
+    return 0
+
 # ==========================================
 # ৩. ইউজার হ্যান্ডেলার (User Handlers)
 # ==========================================
@@ -146,6 +168,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     
     is_created = (result.get("status") == "created")
+
+    # স্টেট রিসেট করা
+    await update_user_state(user_id, 0) 
 
     # ২. ইসলামিক সালাম ও স্বাগত বার্তা
     if is_created:
@@ -181,8 +206,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     data = query.data
     user_id = query.from_user.id
     
-    # মেইন মেনুতে ফিরে যাওয়া
+    # মেইন মেনুতে ফিরে যাওয়া (স্টেট রিসেট)
     if data == "back_to_main":
+        await update_user_state(user_id, 0) 
         first_name = query.from_user.first_name
         
         welcome_message = f"আসসালামু আলাইকুম, <b>{first_name}</b>! 👋\n\nপ্রধান মেনু থেকে কাজ শুরু করুন।"
@@ -204,7 +230,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     if data == "submit_work":
-        await query.edit_message_text(text="কাজ জমা দেওয়ার প্রক্রিয়া শুরু হয়েছে।\n\nপ্রথমে আপনার <b>স্ক্রিনশট লিংকটি</b> দিন।", parse_mode='HTML')
+        # ১. স্টেট আপডেট
+        await update_user_state(user_id, STATE_AWAITING_LINK)
+        
+        # ২. ইউজারকে লিংক দিতে বলা
+        await query.edit_message_text(
+            text="কাজ জমা দেওয়ার প্রক্রিয়া শুরু হয়েছে।\n\nপ্রথমে আপনার <b>স্ক্রিনশট লিংকটি</b> দিন।\n\nবাতিল করতে /start লিখুন।",
+            parse_mode='HTML'
+        )
     
     elif data == "show_account":
         balance = await get_balance(user_id)
@@ -230,7 +263,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(links_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
         
     elif data == "show_guide":
-        # কাজের বিবরণ একটি হার্ডকোড করা টেক্সট
+        # কাজের বিবরণ
         guide_text = (
             f"📚 <b>কাজের বিবরণ ও নির্দেশিকা</b>\n\n"
             f"আমাদের কাজগুলো হলো মূলত বিভিন্ন সাইটে রিভিউ বা রেটিং দেওয়া।\n\n"
@@ -241,6 +274,60 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         keyboard = [[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]]
         await query.edit_message_text(guide_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """সাধারণ মেসেজগুলি হ্যান্ডেল করে, বিশেষ করে যখন ইউজার একটি স্টেটে থাকে"""
+    user_id = update.effective_user.id
+    
+    if not db:
+        await update.message.reply_text("⚠️ ডাটাবেস কানেকশন নেই। কাজ জমা দেওয়া যাবে না।")
+        return
+    
+    current_state = await get_user_state(user_id)
+    text = update.message.text
+    
+    if current_state == STATE_AWAITING_LINK:
+        # এখানে লিংক যাচাই করার সহজ কোড দেওয়া হলো
+        if text.startswith('http'):
+            # ১. সাবমিশন ডাটাবেসে সেভ করা
+            submission_data = {
+                'user_id': user_id,
+                'username': update.effective_user.username,
+                'link': text,
+                'status': 'pending',
+                'submitted_at': firestore.SERVER_TIMESTAMP
+            }
+            db.collection(COLLECTION_SUBMISSIONS).add(submission_data)
+            
+            # ২. স্টেট রিসেট করা
+            await update_user_state(user_id, 0)
+            
+            # ৩. ইউজারকে নিশ্চিত বার্তা দেওয়া
+            await update.message.reply_text(
+                "✅ <b>কাজ সফলভাবে জমা দেওয়া হয়েছে!</b>\n\n"
+                "অ্যাডমিন শীঘ্রই আপনার কাজটি যাচাই করবেন। যাচাই শেষ হলে আপনার অ্যাকাউন্টে টাকা যোগ হবে।",
+                parse_mode='HTML'
+            )
+            
+            # ৪. অ্যাডমিনকে নোটিফিকেশন পাঠানো (ঐচ্ছিক)
+            if ADMIN_USER_ID_STR:
+                try:
+                    await context.bot.send_message(
+                        chat_id=ADMIN_USER_ID_STR,
+                        text=f"🔔 <b>নতুন কাজ জমা পড়েছে!</b>\n"
+                             f"ইউজার ID: <code>{user_id}</code>\n"
+                             f"ইউজার: @{update.effective_user.username or update.effective_user.first_name}\n"
+                             f"লিংক: <a href='{text}'>{text}</a>",
+                        parse_mode='HTML',
+                        disable_web_page_preview=True
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending admin notification: {e}")
+        else:
+            await update.message.reply_text("❌ এটি বৈধ লিংক নয়। দয়া করে স্ক্রিনশটের সম্পূর্ণ লিংক দিন। বাতিল করতে /start লিখুন।")
+    
+    elif current_state == 0:
+        # যদি কোনো স্টেট না থাকে এবং ইউজার কোনো টেক্সট মেসেজ দেয়
+        await update.message.reply_text("আমি এই মেসেজটি বুঝতে পারিনি। দয়া করে মেনু থেকে অপশন নির্বাচন করুন বা /start টাইপ করে প্রধান মেনুতে যান।")
 
 # ==========================================
 # ৪. অ্যাডমিন কমান্ড (Admin Handlers)
@@ -279,17 +366,22 @@ def main() -> None:
         logger.error("❌ Error: BOT_TOKEN is missing! Please set the environment variable.")
         return 
 
-    # >>> V20 ফিক্স: ContextTypes ব্যবহার করে পুরাতন Updater/TypeError এররটি ঠিক করা হলো <<<
+    # >>> V20 ফিক্স: ContextTypes কনফিগারেশন ত্রুটিমুক্ত করা হলো <<<
+    # ContextTypes.DEFAULT_TYPE() ক্লাসটিকে ইনস্ট্যান্টটিট করা
     defaults = ContextTypes.DEFAULT_TYPE()
     # allowed_updates আলাদাভাবে সেট করা হয়েছে, যাতে TypeError না আসে
     defaults.allowed_updates = Update.ALL_TYPES 
     
+    # application.builder() ব্যবহার করে অ্যাপ্লিকেশন তৈরি
     application = Application.builder().token(BOT_TOKEN).context_types(defaults).build()
 
     # হ্যান্ডেলার যোগ করা
     application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    
+    # সকল টেক্সট মেসেজ হ্যান্ডেল করার জন্য MessageHandler যোগ করা
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Webhook সেটআপ
     if WEBHOOK_URL:
