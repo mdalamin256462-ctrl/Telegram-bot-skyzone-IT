@@ -13,7 +13,6 @@ from firebase_admin import credentials, firestore, db as realtime_db
 # ১. কনফিগারেশন এবং সেটআপ
 # ==========================================
 
-# লগিং সেটআপ
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # এনভায়রনমেন্ট ভেরিয়েবল
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_USER_ID_STR = os.getenv("ADMIN_USER_ID") # সুপার অ্যাডমিন আইডি
+ADMIN_USER_ID_STR = os.getenv("ADMIN_USER_ID")
 FIREBASE_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.environ.get('PORT', 8080))
@@ -46,18 +45,6 @@ try:
 
             db = firestore.client()
             rtdb = realtime_db.reference()
-            
-            # সিস্টেম কনফিগারেশন ডিফল্ট সেটআপ (যদি না থাকে)
-            sys_ref = db.collection("system").document("config")
-            if not sys_ref.get().exists:
-                sys_ref.set({
-                    'task_reward': 5.0, # ডিফল্ট কাজের রেট
-                    'show_review': True,
-                    'show_submit': True,
-                    'show_withdraw': True,
-                    'show_refer': True
-                })
-
             logger.info("✅ Firebase Connected Successfully!")
         except Exception as e:
             logger.error(f"❌ Firebase Init Error: {e}")
@@ -66,25 +53,35 @@ try:
 except Exception as e:
     logger.error(f"❌ Critical setup error: {e}")
 
-# লিংক কনফিগারেশন
-LINKS = {
-    "REVIEW_GEN": "https://sites.google.com/view/review-generator/home",
-    "FB_GROUP": "https://www.facebook.com/groups/1853319645292519/?ref=share&mibextid=NSMWBT",
-    "FB_PAGE": "https://www.facebook.com/share/1BX4LQfrq9/",
-    "YT_CHANNEL": "https://youtube.com/@af.mdshakil?si=QoHvBxpnY4-laCQi",
-    "TG_GROUP": "https://t.me/Skyzone_IT_chat", 
-    "TG_CHANNEL": "https://t.me/Skyzone_IT",
-    "TG_CHANNEL_PAYMENT": "https://t.me/brotheritltd",
-    "SUPPORT": "@AfMdshakil",
-    "WEBSITE": "brotheritltd.com",
-    "EMAIL": "raihan@brotheritltd.com",
+# ডিফল্ট কনফিগারেশন (যদি ডাটাবেসে না থাকে)
+DEFAULT_UI_CONFIG = {
+    # Main Menu Buttons
+    "btn_review_gen": {"text": "🌐 রিভিউ জেনারেটর", "url": "https://sites.google.com/view/review-generator/home", "show": True},
+    "btn_submit_work": {"text": "💰 কাজ জমা দিন", "show": True},
+    "btn_balance": {"text": "📈 ব্যালেন্স", "show": True},
+    "btn_withdraw": {"text": "💸 উত্তোলন (Withdraw)", "show": True},
+    "btn_info": {"text": "ℹ️ তথ্য দেখুন", "show": True},
+    "btn_refer": {"text": "👥 রেফার করুন", "show": True},
+    "btn_guide": {"text": "📚 কাজের বিবরণ", "show": True},
+    
+    # Info Menu Links
+    "link_fb_group": {"text": "ফেসবুক গ্রুপ", "url": "https://www.facebook.com/groups/1853319645292519/?ref=share&mibextid=NSMWBT", "show": True},
+    "link_fb_page": {"text": "ফেসবুক পেজ", "url": "https://www.facebook.com/share/1BX4LQfrq9/", "show": True},
+    "link_yt": {"text": "ইউটিউব চ্যানেল", "url": "https://youtube.com/@af.mdshakil?si=QoHvBxpnY4-laCQi", "show": True},
+    "link_tg_channel": {"text": "টেলিগ্রাম চ্যানেল", "url": "https://t.me/Skyzone_IT", "show": True},
+    "link_tg_group": {"text": "টেলিগ্রাম গ্রুপ", "url": "https://t.me/Skyzone_IT_chat", "show": True},
+    "link_tg_payment": {"text": "পেমেন্ট চ্যানেল", "url": "https://t.me/brotheritltd", "show": True},
+    "link_website": {"text": "🌐 ওয়েবসাইট", "url": "https://brotheritltd.com", "show": True},
+    "link_support": {"text": "👨‍💻 সাপোর্ট (অ্যাডমিন)", "url": "https://t.me/AfMdshakil", "show": True},
 }
 
 # কালেকশন নাম
 COLLECTION_USERS = "users"
 COLLECTION_SUBMISSIONS = "submissions"
 COLLECTION_WITHDRAWALS = "withdrawals"
-COLLECTION_ADMINS = "admins" # সাব-অ্যাডমিনদের জন্য
+COLLECTION_ADMINS = "admins"
+DOC_SYSTEM_CONFIG = "config"
+DOC_UI_CONFIG = "ui_config" # নতুন ডকুমেন্ট UI এর জন্য
 
 # ফ্লো স্টেটস
 STATE_IDLE = 0
@@ -104,43 +101,76 @@ STATE_ADMIN_AWAITING_BALANCE_USER_ID = 30
 STATE_ADMIN_AWAITING_BALANCE_AMOUNT = 31
 STATE_ADMIN_AWAITING_REFER_BONUS = 40
 STATE_ADMIN_AWAITING_BROADCAST_MESSAGE = 50
-STATE_ADMIN_AWAITING_TASK_REWARD = 60 # নতুন: টাস্ক রিওয়ার্ড সেট করার জন্য
-STATE_ADMIN_ADD_ADMIN_ID = 70 # নতুন: অ্যাডমিন অ্যাড করার জন্য
-STATE_ADMIN_USER_ACTION_ID = 80 # নতুন: ইউজার ব্লক/ডিলিট করার জন্য
+STATE_ADMIN_AWAITING_TASK_REWARD = 60
+STATE_ADMIN_ADD_ADMIN_ID = 70
+STATE_ADMIN_USER_ACTION_ID = 80
+# নতুন অ্যাডমিন স্টেটস (UI এডিটিং এর জন্য)
+STATE_ADMIN_EDIT_UI_TEXT = 90
+STATE_ADMIN_EDIT_UI_URL = 91
 
 # ==========================================
 # ২. ডাটাবেস এবং হেল্পার ফাংশন
 # ==========================================
 
 async def get_system_config():
-    """সিস্টেম কনফিগারেশন (ফিচার টগল, রেট) আনা"""
+    """সিস্টেম কনফিগারেশন আনা (রেট, টগলস)"""
     if db is None: return {}
     try:
-        doc = db.collection("system").document("config").get()
+        doc = db.collection("system").document(DOC_SYSTEM_CONFIG).get()
         return doc.to_dict() if doc.exists else {}
-    except:
-        return {}
+    except: return {}
 
-async def update_system_config(key, value):
-    """সিস্টেম কনফিগারেশন আপডেট করা"""
+async def get_ui_config():
+    """UI বাটন এবং লিংক কনফিগারেশন আনা"""
+    if db is None: return DEFAULT_UI_CONFIG
+    try:
+        doc = db.collection("system").document(DOC_UI_CONFIG).get()
+        if doc.exists:
+            # ডাটাবেসের ডাটার সাথে ডিফল্ট মার্জ করা (যাতে নতুন বাটন মিস না হয়)
+            saved_config = doc.to_dict()
+            final_config = DEFAULT_UI_CONFIG.copy()
+            final_config.update(saved_config)
+            return final_config
+        else:
+            # প্রথমবার ডিফল্ট সেভ করে দেওয়া
+            db.collection("system").document(DOC_UI_CONFIG).set(DEFAULT_UI_CONFIG)
+            return DEFAULT_UI_CONFIG
+    except Exception as e:
+        logger.error(f"UI Config Error: {e}")
+        return DEFAULT_UI_CONFIG
+
+async def update_ui_element(key, field, value):
+    """UI এর নির্দিষ্ট এলিমেন্ট আপডেট করা (text/url/show)"""
     if db is None: return False
     try:
-        db.collection("system").document("config").update({key: value})
+        # ডট নোটেশন ব্যবহার করে নেস্টেড ফিল্ড আপডেট
+        db.collection("system").document(DOC_UI_CONFIG).update({
+            f"{key}.{field}": value
+        })
         return True
     except:
-        # ডকুমেন্ট না থাকলে তৈরি করবে
-        db.collection("system").document("config").set({key: value}, merge=True)
+        # ডকুমেন্ট না থাকলে পুরোটা সেট করা
+        full_config = await get_ui_config()
+        if key in full_config:
+            full_config[key][field] = value
+            db.collection("system").document(DOC_UI_CONFIG).set(full_config)
+            return True
+        return False
+
+async def update_system_config(key, value):
+    if db is None: return False
+    try:
+        db.collection("system").document(DOC_SYSTEM_CONFIG).update({key: value})
+        return True
+    except:
+        db.collection("system").document(DOC_SYSTEM_CONFIG).set({key: value}, merge=True)
         return True
 
 async def is_super_admin(user_id):
-    """চেক করে ইউজার সুপার অ্যাডমিন কিনা"""
     return str(user_id) == ADMIN_USER_ID_STR
 
 async def is_admin(user_id):
-    """চেক করে ইউজার অ্যাডমিন (সুপার বা সাব) কিনা"""
-    if str(user_id) == ADMIN_USER_ID_STR:
-        return True
-    
+    if str(user_id) == ADMIN_USER_ID_STR: return True
     if db:
         doc = db.collection(COLLECTION_ADMINS).document(str(user_id)).get()
         return doc.exists
@@ -148,15 +178,13 @@ async def is_admin(user_id):
 
 async def get_or_create_user(user_id, username, first_name, referred_by=None):
     if db is None: return {"status": "NO_DB"}
-    
     try:
         user_ref = db.collection(COLLECTION_USERS).document(str(user_id))
         user_doc = user_ref.get()
         
         if user_doc.exists:
             user_data = user_doc.to_dict()
-            if user_data.get('is_blocked', False):
-                return {"status": "blocked"}
+            if user_data.get('is_blocked', False): return {"status": "blocked"}
             return {"status": "exists", "data": user_data}
         else:
             referral_bonus = 0.0
@@ -178,74 +206,72 @@ async def get_or_create_user(user_id, username, first_name, referred_by=None):
             }
             user_ref.set(new_user)
             return {"status": "created", "data": new_user}
-    except Exception as e:
-        logger.error(f"Error in get_or_create_user: {e}")
-        return {"status": "NO_DB"}
+    except Exception as e: return {"status": "NO_DB"}
 
 async def update_balance(user_id, amount):
     if db is None: return False
     try:
-        user_ref = db.collection(COLLECTION_USERS).document(str(user_id))
-        user_ref.update({'balance': firestore.Increment(amount)})
+        db.collection(COLLECTION_USERS).document(str(user_id)).update({
+            'balance': firestore.Increment(amount)
+        })
         return True
     except: return False
 
-async def get_user_data(user_id):
-    if db is None: return None
-    doc = db.collection(COLLECTION_USERS).document(str(user_id)).get()
-    return doc.to_dict() if doc.exists else None
-
 async def get_balance(user_id):
-    data = await get_user_data(user_id)
-    return data.get("balance", 0.0) if data else 0.0
+    if db is None: return 0.0
+    doc = db.collection(COLLECTION_USERS).document(str(user_id)).get()
+    return doc.to_dict().get("balance", 0.0) if doc.exists else 0.0
 
 async def update_user_state(user_id, state, temp_data=None):
     if db is None: return
     try:
-        user_ref = db.collection(COLLECTION_USERS).document(str(user_id))
         update_fields = {'state': state}
-        if temp_data is not None:
-            update_fields['temp_data'] = temp_data
-        user_ref.update(update_fields)
+        if temp_data is not None: update_fields['temp_data'] = temp_data
+        db.collection(COLLECTION_USERS).document(str(user_id)).update(update_fields)
     except: pass
 
 async def get_user_state_and_data(user_id):
-    data = await get_user_data(user_id)
-    return data.get("state", STATE_IDLE) if data else STATE_IDLE, data.get("temp_data", {}) if data else {}
+    if db is None: return STATE_IDLE, {}
+    doc = db.collection(COLLECTION_USERS).document(str(user_id)).get()
+    data = doc.to_dict() if doc.exists else None
+    return (data.get("state", STATE_IDLE), data.get("temp_data", {})) if data else (STATE_IDLE, {})
 
 async def get_refer_bonus():
-    if rtdb is None: return 3.00
-    try:
-        bonus = rtdb.child("ReferBonus").get()
-        return float(bonus) if bonus else 3.00
-    except: return 3.00
-        
+    # প্রথমে সিস্টেম কনফিগ চেক করবে (Firestore), না পেলে RTDB
+    sys_conf = await get_system_config()
+    if 'refer_bonus' in sys_conf:
+        return float(sys_conf['refer_bonus'])
+    
+    if rtdb:
+        try:
+            bonus = rtdb.child("ReferBonus").get()
+            return float(bonus) if bonus else 3.00
+        except: pass
+    return 3.00
+
 async def set_refer_bonus(amount):
-    if rtdb is None: return False
-    try:
-        rtdb.child("ReferBonus").set(amount)
-        return True
-    except: return False
+    # Firestore এবং RTDB দুটোতেই আপডেট করবে যাতে সিঙ্ক থাকে
+    await update_system_config('refer_bonus', amount)
+    if rtdb:
+        try: rtdb.child("ReferBonus").set(amount)
+        except: pass
+    return True
 
 async def get_all_user_ids():
     if db is None: return []
     try:
         users = db.collection(COLLECTION_USERS).select(['user_id']).stream()
-        return [doc.get('user_id') for doc in users if doc.get('user_id') is not None]
+        return [doc.get('user_id') for doc in users]
     except: return []
 
 async def get_total_users_count():
-    """মোট ইউজার সংখ্যা গণনা"""
     if db is None: return 0
     try:
-        # Firestore Count Aggregation (Cost effective)
-        # Note: If library version is old, it might fallback to len(list)
         users = db.collection(COLLECTION_USERS).select(['user_id']).stream()
         return len(list(users))
     except: return 0
 
 async def delete_user(user_id):
-    """ইউজার ডিলিট করা"""
     if db is None: return False
     try:
         db.collection(COLLECTION_USERS).document(str(user_id)).delete()
@@ -253,7 +279,6 @@ async def delete_user(user_id):
     except: return False
 
 async def toggle_block_user(user_id, block_status):
-    """ইউজার ব্লক/আনব্লক করা"""
     if db is None: return False
     try:
         db.collection(COLLECTION_USERS).document(str(user_id)).update({'is_blocked': block_status})
@@ -265,10 +290,11 @@ async def toggle_block_user(user_id, block_status):
 # ==========================================
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # যদি internal call হয়, তবে update.effective_user ব্যবহার করা নিরাপদ
     user = update.effective_user
     user_id = user.id
     
-    # রেফারেল হ্যান্ডেলিং
+    # রেফারেল হ্যান্ডেলিং (শুধুমাত্র মেসেজ কমান্ডের জন্য, বাটন ক্লিকের জন্য নয়)
     referred_by = None
     if context.args and context.args[0].isdigit():
         referred_by = int(context.args[0])
@@ -276,42 +302,52 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     result = await get_or_create_user(user_id, user.username or 'N/A', user.first_name, referred_by)
     
     if result.get("status") == "blocked":
-        await update.message.reply_text("🚫 দুঃখিত! আপনাকে ব্লক করা হয়েছে।")
+        text = "🚫 দুঃখিত! আপনাকে ব্লক করা হয়েছে।"
+        if update.callback_query:
+            await update.callback_query.edit_message_text(text)
+        else:
+            await update.message.reply_text(text)
         return
     
     await update_user_state(user_id, STATE_IDLE)
     
-    # কনফিগারেশন চেক করে বাটন শো/হাইড করা
-    config = await get_system_config()
+    # ডায়নামিক কনফিগারেশন লোড
+    ui_config = await get_ui_config()
     
     keyboard = []
     
-    # রিভিউ জেনারেটর বাটন (লুকানো যাবে)
-    if config.get('show_review', True):
-        keyboard.append([InlineKeyboardButton("🌐 রিভিউ জেনারেটর", url=LINKS['REVIEW_GEN'])])
+    # ১. রিভিউ জেনারেটর
+    if ui_config.get("btn_review_gen", {}).get("show", True):
+        cfg = ui_config["btn_review_gen"]
+        keyboard.append([InlineKeyboardButton(cfg.get("text", "🌐 রিভিউ জেনারেটর"), url=cfg.get("url"))])
     
-    # কাজের বাটন এবং ব্যালেন্স
+    # ২. কাজ এবং ব্যালেন্স
     row2 = []
-    if config.get('show_submit', True):
-        row2.append(InlineKeyboardButton("💰 কাজ জমা দিন", callback_data="submit_work"))
-    row2.append(InlineKeyboardButton("📈 ব্যালেন্স", callback_data="show_account"))
+    if ui_config.get("btn_submit_work", {}).get("show", True):
+        row2.append(InlineKeyboardButton(ui_config["btn_submit_work"].get("text", "💰 কাজ জমা দিন"), callback_data="submit_work"))
+    
+    if ui_config.get("btn_balance", {}).get("show", True):
+        row2.append(InlineKeyboardButton(ui_config["btn_balance"].get("text", "📈 ব্যালেন্স"), callback_data="show_account"))
     if row2: keyboard.append(row2)
     
-    # উইথড্র এবং তথ্য বাটন
+    # ৩. উইথড্র এবং ইনফো
     row3 = []
-    if config.get('show_withdraw', True):
-        row3.append(InlineKeyboardButton("💸 উত্তোলন (Withdraw)", callback_data="start_withdraw"))
-    # নাম পরিবর্তন: "সব লিংক" -> "তথ্য দেখুন"
-    row3.append(InlineKeyboardButton("ℹ️ তথ্য দেখুন", callback_data="info_links_menu"))
+    if ui_config.get("btn_withdraw", {}).get("show", True):
+        row3.append(InlineKeyboardButton(ui_config["btn_withdraw"].get("text", "💸 উত্তোলন"), callback_data="start_withdraw"))
+    
+    if ui_config.get("btn_info", {}).get("show", True):
+        row3.append(InlineKeyboardButton(ui_config["btn_info"].get("text", "ℹ️ তথ্য দেখুন"), callback_data="info_links_menu"))
     if row3: keyboard.append(row3)
     
-    # রেফার বাটন
-    if config.get('show_refer', True):
-        keyboard.append([InlineKeyboardButton("👥 রেফার করুন", callback_data="show_referral_link")])
-        
-    keyboard.append([InlineKeyboardButton("📚 কাজের বিবরণ", callback_data="show_guide")])
+    # ৪. রেফার
+    if ui_config.get("btn_refer", {}).get("show", True):
+        keyboard.append([InlineKeyboardButton(ui_config["btn_refer"].get("text", "👥 রেফার করুন"), callback_data="show_referral_link")])
     
-    # অ্যাডমিন বাটন (যদি অ্যাডমিন হয়)
+    # ৫. গাইড
+    if ui_config.get("btn_guide", {}).get("show", True):
+        keyboard.append([InlineKeyboardButton(ui_config["btn_guide"].get("text", "📚 কাজের বিবরণ"), callback_data="show_guide")])
+    
+    # অ্যাডমিন
     if await is_admin(user_id):
         keyboard.append([InlineKeyboardButton("👑 অ্যাডমিন প্যানেল", callback_data="open_admin_panel")])
 
@@ -319,7 +355,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if result.get("status") == "created" and result['data'].get('referred_by'):
          welcome_text += f"\n🎉 রেফারেল বোনাস যোগ করা হয়েছে।"
 
-    await update.message.reply_text(welcome_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    # মেসেজ এডিট বা নতুন পাঠানো হ্যান্ডেলিং
+    if update.callback_query:
+        # যদি আগের মেসেজ এডিট করা সম্ভব হয়
+        try:
+            await update.callback_query.edit_message_text(welcome_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        except:
+            # যদি এডিট সম্ভব না হয় (যেমন ইমেজ থেকে টেক্সটে আসা), নতুন মেসেজ
+            await context.bot.send_message(chat_id=user_id, text=welcome_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    else:
+        await update.message.reply_text(welcome_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -327,23 +372,58 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     data = query.data
     user_id = query.from_user.id
     
-    # ব্যাক টু মেইন মেনু (স্টেট রিসেট সহ)
+    # ব্যাক টু মেইন মেনু ফিক্স
     if data == "back_to_main":
         await update_user_state(user_id, STATE_IDLE)
-        # পুনরায় /start লজিক চালানোর জন্য
+        # start_command কল করার সময় update পাস করা হচ্ছে যাতে effective_user পাওয়া যায়
         await start_command(update, context)
         return
 
-    # তথ্য দেখুন মেনু (বাটন আকারে লিংক)
+    # ডায়নামিক ইনফো মেনু
     if data == "info_links_menu":
-        link_keyboard = [
-            [InlineKeyboardButton("ফেসবুক গ্রুপ", url=LINKS['FB_GROUP']), InlineKeyboardButton("ফেসবুক পেজ", url=LINKS['FB_PAGE'])],
-            [InlineKeyboardButton("ইউটিউব চ্যানেল", url=LINKS['YT_CHANNEL']), InlineKeyboardButton("টেলিগ্রাম চ্যানেল", url=LINKS['TG_CHANNEL'])],
-            [InlineKeyboardButton("টেলিগ্রাম গ্রুপ", url=LINKS['TG_GROUP']), InlineKeyboardButton("পেমেন্ট চ্যানেল", url=LINKS['TG_CHANNEL_PAYMENT'])],
-            [InlineKeyboardButton("🌐 ওয়েবসাইট", url=f"https://{LINKS['WEBSITE']}")],
-            [InlineKeyboardButton("👨‍💻 সাপোর্ট (অ্যাডমিন)", url=f"https://t.me/{LINKS['SUPPORT'].replace('@', '')}")],
-            [InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]
-        ]
+        ui_config = await get_ui_config()
+        link_keyboard = []
+        
+        # Helper to create button if visible
+        def get_link_btn(key):
+            cfg = ui_config.get(key, {})
+            if cfg.get("show", True):
+                return InlineKeyboardButton(cfg.get("text", "Link"), url=cfg.get("url"))
+            return None
+
+        # Row 1
+        r1 = []
+        b1 = get_link_btn("link_fb_group")
+        b2 = get_link_btn("link_fb_page")
+        if b1: r1.append(b1)
+        if b2: r1.append(b2)
+        if r1: link_keyboard.append(r1)
+        
+        # Row 2
+        r2 = []
+        b3 = get_link_btn("link_yt")
+        b4 = get_link_btn("link_tg_channel")
+        if b3: r2.append(b3)
+        if b4: r2.append(b4)
+        if r2: link_keyboard.append(r2)
+
+        # Row 3
+        r3 = []
+        b5 = get_link_btn("link_tg_group")
+        b6 = get_link_btn("link_tg_payment")
+        if b5: r3.append(b5)
+        if b6: r3.append(b6)
+        if r3: link_keyboard.append(r3)
+
+        # Row 4 & 5
+        b7 = get_link_btn("link_website")
+        if b7: link_keyboard.append([b7])
+        
+        b8 = get_link_btn("link_support")
+        if b8: link_keyboard.append([b8])
+
+        link_keyboard.append([InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")])
+        
         await query.edit_message_text(
             "ℹ️ <b>সকল তথ্য ও লিংকসমূহ:</b>\n\nনিচের বাটনগুলো ব্যবহার করে আমাদের সাথে যুক্ত হন।",
             reply_markup=InlineKeyboardMarkup(link_keyboard),
@@ -549,6 +629,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update_user_state(user_id, STATE_IDLE)
         else: await update.message.reply_text("❌ সঠিক আইডি দিন।")
 
+    # --- UI এডিট ফ্লো ---
+    elif state == STATE_ADMIN_EDIT_UI_TEXT:
+        target_key = temp_data.get('target_key')
+        await update_ui_element(target_key, 'text', text)
+        await update_user_state(user_id, STATE_IDLE)
+        await update.message.reply_text("✅ বাটন টেক্সট পরিবর্তন হয়েছে।")
+
+    elif state == STATE_ADMIN_EDIT_UI_URL:
+        target_key = temp_data.get('target_key')
+        if 'http' in text:
+            await update_ui_element(target_key, 'url', text)
+            await update_user_state(user_id, STATE_IDLE)
+            await update.message.reply_text("✅ বাটন লিংক পরিবর্তন হয়েছে।")
+        else:
+            await update.message.reply_text("❌ সঠিক লিংক দিন (https://...)")
+
 # হেল্পার সাবমিশন ফাংশন
 async def save_submission(update, context, user_id, s_type, link=None, data=None):
     sub_data = {
@@ -566,7 +662,6 @@ async def save_submission(update, context, user_id, s_type, link=None, data=None
     await update_user_state(user_id, STATE_IDLE)
     await update.message.reply_text("✅ কাজ জমা হয়েছে! অ্যাডমিন চেক করবে।")
     
-    # অ্যাডমিন নোটিফাই
     msg = f"🔔 <b>নতুন কাজ!</b>\nID: <code>{user_id}</code>\nType: {s_type}"
     kb = [[InlineKeyboardButton("✅ Approve", callback_data=f"adm_app_{ref[1].id}"), InlineKeyboardButton("❌ Reject", callback_data=f"adm_rej_{ref[1].id}")]]
     if ADMIN_USER_ID_STR:
@@ -587,7 +682,6 @@ async def save_withdrawal(update, context, user_id, temp_data):
     await update_user_state(user_id, STATE_IDLE)
     await update.message.reply_text("✅ উইথড্র রিকোয়েস্ট জমা হয়েছে!")
     
-    # অ্যাডমিন নোটিফাই
     msg = f"💸 <b>উইথড্র!</b>\nID: <code>{user_id}</code>\nAmount: {temp_data['amount']}\nTo: {temp_data['target']} ({temp_data['method']})"
     kb = [[InlineKeyboardButton("✅ Paid", callback_data=f"adm_pay_{ref[1].id}")]]
     if ADMIN_USER_ID_STR:
@@ -613,8 +707,6 @@ async def withdraw_method_handler(update: Update, context: ContextTypes.DEFAULT_
 async def show_admin_panel(update, context, user_id):
     """অ্যাডমিন প্যানেলের মেইন মেনু"""
     is_super = await is_super_admin(user_id)
-    
-    # পরিসংখ্যান
     total_users = await get_total_users_count()
     
     text = f"👑 <b>অ্যাডমিন প্যানেল</b>\n\n📊 মোট ইউজার: {total_users} জন\nআপনার রোল: {'🔥 সুপার অ্যাডমিন' if is_super else '👮 অ্যাডমিন'}"
@@ -625,9 +717,9 @@ async def show_admin_panel(update, context, user_id):
         [InlineKeyboardButton("🛑 ইউজার কন্ট্রোল (ব্লক/ডিলিট)", callback_data="admin_user_control")]
     ]
     
-    # শুধু সুপার অ্যাডমিনের জন্য এক্সট্রা ফিচার
     if is_super:
-        keyboard.append([InlineKeyboardButton("⚙️ সেটিংস ও ফিচার", callback_data="admin_settings_menu")])
+        keyboard.append([InlineKeyboardButton("🎨 UI এবং বাটন ম্যানেজমেন্ট", callback_data="admin_ui_menu")])
+        keyboard.append([InlineKeyboardButton("⚙️ সেটিংস ও বোনাস", callback_data="admin_settings_menu")])
         keyboard.append([InlineKeyboardButton("👮 অ্যাডমিন ম্যানেজ করুন", callback_data="admin_manage_admins")])
         
     keyboard.append([InlineKeyboardButton("🔙 মেইন মেনু", callback_data="back_to_main")])
@@ -671,51 +763,111 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await update_user_state(user_id, STATE_ADMIN_USER_ACTION_ID, temp_data={'action': action})
         await query.edit_message_text(f"🛑 টার্গেট ইউজারের **ID** দিন ({action} করার জন্য):")
 
-    # --- সুপার অ্যাডমিন অ্যাকশন ---
+    # --- সুপার অ্যাডমিন সেটিংস ---
     elif data == "admin_settings_menu":
         if not is_super: return
         config = await get_system_config()
         
-        # টগল বাটন জেনারেটর
-        def get_btn_text(key, label):
-            status = "✅" if config.get(key, True) else "❌"
-            return f"{status} {label}"
-            
         kb = [
-            [InlineKeyboardButton(get_btn_text('show_review', "রিভিউ বাটন"), callback_data="toggle_show_review")],
-            [InlineKeyboardButton(get_btn_text('show_submit', "কাজ জমা বাটন"), callback_data="toggle_show_submit")],
-            [InlineKeyboardButton(get_btn_text('show_withdraw', "উইথড্র বাটন"), callback_data="toggle_show_withdraw")],
             [InlineKeyboardButton(f"💰 টাস্ক রেট: {config.get('task_reward', 5)} TK", callback_data="set_task_reward")],
-            [InlineKeyboardButton(f"🎁 রেফার বোনাস", callback_data="set_refer_bonus")],
+            [InlineKeyboardButton(f"🎁 রেফার বোনাস সেট করুন", callback_data="set_refer_bonus")],
             [InlineKeyboardButton("🔙 ব্যাক", callback_data="open_admin_panel")]
         ]
-        await query.edit_message_text("⚙️ **সিস্টেম সেটিংস:**\nযেকোনো ফিচারে ক্লিক করে অন/অফ করুন।", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        await query.edit_message_text("⚙️ **সিস্টেম সেটিংস:**", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
 
-    elif data.startswith("toggle_"):
-        if not is_super: return
-        key = data.replace("toggle_", "")
-        config = await get_system_config()
-        new_val = not config.get(key, True)
-        await update_system_config(key, new_val)
-        # রিফ্রেশ মেনু
-        await query.data == "admin_settings_menu" # হ্যাক রিফ্রেশ
-        await admin_callback_handler(update, context) # রিকার্সিভ কল রিফ্রেশ করতে
-        
     elif data == "set_task_reward":
         if not is_super: return
         await update_user_state(user_id, STATE_ADMIN_AWAITING_TASK_REWARD)
-        await query.edit_message_text("💰 প্রতিটি অ্যাপ্রুভ কাজের জন্য কত টাকা দিতে চান? (সংখ্যা লিখুন):")
+        await query.edit_message_text("💰 কাজের রেট (টাকা) কত হবে? (সংখ্যা লিখুন):")
 
     elif data == "set_refer_bonus":
         if not is_super: return
+        curr = await get_refer_bonus()
         await update_user_state(user_id, STATE_ADMIN_AWAITING_REFER_BONUS)
-        await query.edit_message_text("🎁 প্রতি রেফারে কত বোনাস দিতে চান? (সংখ্যা লিখুন):")
+        await query.edit_message_text(f"🎁 বর্তমানে বোনাস: {curr} TK\nনতুন বোনাস কত দিতে চান? (সংখ্যা লিখুন):")
 
+    # --- UI ম্যানেজমেন্ট মেনু ---
+    elif data == "admin_ui_menu":
+        if not is_super: return
+        
+        kb = [
+            [InlineKeyboardButton("মেনু বাটন (Home)", callback_data="aui_cat_home")],
+            [InlineKeyboardButton("ইনফো লিংক (Info)", callback_data="aui_cat_info")],
+            [InlineKeyboardButton("🔙 ব্যাক", callback_data="open_admin_panel")]
+        ]
+        await query.edit_message_text("🎨 **কোন অংশের বাটন এডিট করবেন?**", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+
+    elif data.startswith("aui_cat_"):
+        if not is_super: return
+        cat = data.split('_')[-1]
+        ui_config = await get_ui_config()
+        
+        kb = []
+        for key, val in ui_config.items():
+            # ফিল্টারিং: হোম পেজ বাটন vs ইনফো পেজ লিংক
+            if cat == "home" and not key.startswith("btn_"): continue
+            if cat == "info" and not key.startswith("link_"): continue
+            
+            status = "👁️" if val.get("show", True) else "🚫"
+            # বাটনের নাম ছোট করে দেখানো যাতে লাইনে ধরে
+            btn_name = val.get('text', key)[:20]
+            kb.append([InlineKeyboardButton(f"{status} {btn_name}", callback_data=f"aui_sel_{key}")])
+        
+        kb.append([InlineKeyboardButton("🔙 ব্যাক", callback_data="admin_ui_menu")])
+        await query.edit_message_text("🔘 **এডিট করার জন্য বাটন সিলেক্ট করুন:**", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+
+    elif data.startswith("aui_sel_"):
+        if not is_super: return
+        key = data.replace("aui_sel_", "")
+        ui_config = await get_ui_config()
+        item = ui_config.get(key, {})
+        
+        status_text = "Visible" if item.get("show", True) else "Hidden"
+        toggle_action = "Hide" if item.get("show", True) else "Show"
+        
+        text = f"🔧 **Edit Button:**\nKey: `{key}`\nText: {item.get('text')}\nLink: {item.get('url', 'N/A')}\nStatus: {status_text}"
+        
+        kb = [
+            [InlineKeyboardButton("✏️ নাম পরিবর্তন (Rename)", callback_data=f"aui_ren_{key}")],
+            [InlineKeyboardButton(f"👁️ {toggle_action}", callback_data=f"aui_tog_{key}")],
+            [InlineKeyboardButton("🔙 ব্যাক", callback_data="admin_ui_menu")]
+        ]
+        # যদি লিংক বাটন হয় তবে লিংক চেঞ্জ অপশন দাও
+        if "url" in item or key.startswith("link_") or key == "btn_review_gen":
+             kb.insert(1, [InlineKeyboardButton("🔗 লিংক পরিবর্তন", callback_data=f"aui_url_{key}")])
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+
+    elif data.startswith("aui_ren_"):
+        key = data.replace("aui_ren_", "")
+        await update_user_state(user_id, STATE_ADMIN_EDIT_UI_TEXT, temp_data={'target_key': key})
+        await query.edit_message_text(f"📝 `{key}` এর জন্য নতুন নাম লিখুন:", parse_mode='Markdown')
+
+    elif data.startswith("aui_url_"):
+        key = data.replace("aui_url_", "")
+        await update_user_state(user_id, STATE_ADMIN_EDIT_UI_URL, temp_data={'target_key': key})
+        await query.edit_message_text(f"🔗 `{key}` এর জন্য নতুন লিংক লিখুন:", parse_mode='Markdown')
+
+    elif data.startswith("aui_tog_"):
+        key = data.replace("aui_tog_", "")
+        ui_config = await get_ui_config()
+        curr_show = ui_config.get(key, {}).get("show", True)
+        await update_ui_element(key, 'show', not curr_show)
+        # রিফ্রেশ
+        await query.data == f"aui_sel_{key}"
+        # ম্যানুয়াল রিফ্রেশ মেসেজ
+        new_status = "Hidden" if curr_show else "Visible"
+        await query.answer(f"Status changed to {new_status}")
+        # আমরা ব্যাক করে লিস্টে পাঠিয়ে দিই যাতে স্ট্যাটাস আপডেট দেখা যায়
+        await admin_callback_handler(update, context) # রিকার্সিভ কল একটু রিস্কি, তাই সিম্পল টেক্সট দিচ্ছি
+        await query.edit_message_text(f"✅ Status updated to {new_status}!\n\nআবার সিলেক্ট করুন:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 লিস্টে ফিরে যান", callback_data="admin_ui_menu")]]))
+
+
+    # --- অ্যাডমিন ম্যানেজমেন্ট ---
     elif data == "admin_manage_admins":
         if not is_super: return
         kb = [
             [InlineKeyboardButton("➕ নতুন অ্যাডমিন যোগ করুন", callback_data="adm_add_new")],
-            [InlineKeyboardButton("➖ অ্যাডমিন রিমুভ (ID দিন)", callback_data="adm_remove_id")], # সিম্পলিসিটির জন্য ডাইরেক্ট ইনপুট
             [InlineKeyboardButton("🔙 ব্যাক", callback_data="open_admin_panel")]
         ]
         await query.edit_message_text("👮 **অ্যাডমিন ম্যানেজমেন্ট**", reply_markup=InlineKeyboardMarkup(kb))
@@ -725,15 +877,6 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await update_user_state(user_id, STATE_ADMIN_ADD_ADMIN_ID)
         await query.edit_message_text("➕ যাকে অ্যাডমিন বানাতে চান তার **User ID** দিন:")
         
-    elif data == "adm_remove_id":
-        if not is_super: return
-        # রিমুভ লজিক সিম্পল রাখার জন্য আমরা এখানে স্টেট ব্যবহার করছি না, অ্যাডমিন প্যানেলে ম্যানুয়ালি ডিলিট করা ভালো Firestore কনসোল থেকে, তবে এখানে চাইলে একই ভাবে ID ইনপুট নিয়ে ডিলিট করা যাবে।
-        # আপাতত আমরা ইউজারের মতোই ইনপুট নিবো
-        await update_user_state(user_id, STATE_ADMIN_USER_ACTION_ID, temp_data={'action': 'remove_admin_privilege'}) 
-        # নোট: STATE_ADMIN_USER_ACTION_ID তে আমরা 'remove_admin_privilege' লজিক অ্যাড করতে হবে handle_message এ।
-        # কিন্তু কোড ছোট রাখার জন্য আমি এখানে একটা ট্রিক করছি: অ্যাডমিন রিমুভ করার জন্য সোজা Firestore থেকে ডিলিট কমান্ড।
-        await query.edit_message_text("⚠️ অ্যাডমিন রিমুভ করতে হলে সরাসরি Firestore ডাটাবেসের 'admins' কালেকশন থেকে ডকুমেন্ট ডিলিট করা নিরাপদ। অথবা আমাকে বলুন কোড বাড়াতে।")
-
     # --- কাজ অ্যাপ্রুভাল ---
     elif data.startswith("adm_app_") or data.startswith("adm_rej_"):
         sub_id = data.split('_')[-1]
@@ -754,7 +897,6 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             ref.update({'status': status, 'by': user_id})
             
             if is_approve:
-                # ডায়নামিক রেট আনা
                 conf = await get_system_config()
                 reward = conf.get('task_reward', 5.0)
                 await update_balance(s_data['user_id'], reward)
@@ -791,10 +933,12 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("admin", lambda u, c: show_admin_panel(u, c, u.effective_user.id)))
     
+    # Callback Handlers
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^adm')) # Admin & Actions
-    app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^toggle_')) # Toggles
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^set_')) # Settings
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^admin_')) # Navigation
+    app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^aui_')) # Admin UI Control
+    
     app.add_handler(CallbackQueryHandler(withdraw_method_handler, pattern='^wd_method_'))
     app.add_handler(CallbackQueryHandler(button_handler))
     
