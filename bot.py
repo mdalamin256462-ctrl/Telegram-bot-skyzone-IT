@@ -29,7 +29,8 @@ FIREBASE_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 # হোস্টিং কনফিগারেশন
 PORT = int(os.environ.get('PORT', 8080))
 WEBHOOK_URL = os.getenv("WEBHOOK_URL") 
-REALTIME_DATABASE_URL = "https://telegram-bot-skyzone-it-default-rtdb.firebaseio.com" # আপনার Realtime DB URL
+# রিয়েলটাইম ডাটাবেস ইউআরএল আপনার প্রজেক্ট অনুযায়ী পরিবর্তন করুন
+REALTIME_DATABASE_URL = "https://telegram-bot-skyzone-it-default-rtdb.firebaseio.com" 
 
 # ফায়ারবেস ইনিশিয়ালাইজেশন (নিরাপদ ব্লক)
 db = None # Firestore ক্লায়েন্ট
@@ -79,6 +80,7 @@ COLLECTION_SUBMISSIONS = "submissions"
 
 # ইউজার অ্যাকাউন্টের স্ট্যাটাস চেক/তৈরি
 async def get_or_create_user(user_id, username, first_name):
+    """ইউজার ডাটাবেসে আছে কিনা চেক করে, না থাকলে তৈরি করে"""
     if db is None:
         return {"status": "NO_DB"}
     
@@ -104,6 +106,7 @@ async def get_or_create_user(user_id, username, first_name):
 
 # ব্যালেন্স আপডেট
 async def update_balance(user_id, amount):
+    """ইউজারের ব্যালেন্স আপডেট করা"""
     if db is None:
         return False
     
@@ -117,6 +120,7 @@ async def update_balance(user_id, amount):
 
 # ব্যালেন্স চেক
 async def get_balance(user_id):
+    """ইউজারের বর্তমান ব্যালেন্স চেক করা"""
     if db is None: return 0.0
     doc = db.collection(COLLECTION_USERS).document(str(user_id)).get()
     if doc.exists:
@@ -128,6 +132,7 @@ async def get_balance(user_id):
 # ==========================================
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/start কমান্ড হ্যান্ডেল করে এবং প্রাথমিক মেনু দেখায়"""
     user = update.effective_user
     user_id = user.id
     username = user.username if user.username else 'N/A'
@@ -169,6 +174,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """ইনলাইন বাটন ক্লিক হ্যান্ডেল করে"""
     query = update.callback_query
     await query.answer()
     
@@ -241,6 +247,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ==========================================
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/admin কমান্ড হ্যান্ডেল করে"""
     user_id = str(update.effective_user.id)
     
     # শুধু অ্যাডমিন এক্সেস পাবে
@@ -272,16 +279,16 @@ def main() -> None:
         logger.error("❌ Error: BOT_TOKEN is missing! Please set the environment variable.")
         return 
 
-    # >>> V20 ফিক্স: ContextTypes ব্যবহার করে পুরাতন Updater এররটি ঠিক করা হলো <<<
-    defaults = ContextTypes.DEFAULT_TYPE(allowed_updates=Update.ALL_TYPES) # 'allow_update_types' এর বদলে 'allowed_updates' ব্যবহার করা হয়েছে
+    # >>> V20 ফিক্স: ContextTypes ব্যবহার করে পুরাতন Updater/TypeError এররটি ঠিক করা হলো <<<
+    defaults = ContextTypes.DEFAULT_TYPE()
+    # allowed_updates আলাদাভাবে সেট করা হয়েছে, যাতে TypeError না আসে
+    defaults.allowed_updates = Update.ALL_TYPES 
     
     application = Application.builder().token(BOT_TOKEN).context_types(defaults).build()
 
-    # ইউজার কমান্ড
+    # হ্যান্ডেলার যোগ করা
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CallbackQueryHandler(button_handler))
-
-    # অ্যাডমিন কমান্ড
     application.add_handler(CommandHandler("admin", admin_command))
     
     # Webhook সেটআপ
