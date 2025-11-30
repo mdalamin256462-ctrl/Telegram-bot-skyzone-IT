@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQuer
 # Firebase Imports
 import firebase_admin
 from firebase_admin import credentials, firestore, db as realtime_db
-from firebase_admin._messaging_utils import messaging_error
+# সমস্যা সৃষ্টিকারী লাইনটি এখান থেকে সরিয়ে দেওয়া হয়েছে (messaging_error)
 
 # ==========================================
 # ১. কনফিগারেশন এবং সেটআপ
