@@ -5,7 +5,7 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 
-# Firebase Imports (মিসিং ছিল, যোগ করা হয়েছে)
+# Firebase Imports
 import firebase_admin
 from firebase_admin import credentials, firestore, db as realtime_db
 
@@ -21,18 +21,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # এনভায়রনমেন্ট ভেরিয়েবল
-BOT_TOKEN = os.getenv("BOT_TOKEN")  
-ADMIN_USER_ID_STR = os.getenv("ADMIN_USER_ID") 
-FIREBASE_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT") 
-WEBHOOK_URL = os.getenv("WEBHOOK_URL") 
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_USER_ID_STR = os.getenv("ADMIN_USER_ID")
+FIREBASE_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.environ.get('PORT', 8080))
 
-# রিয়েলটাইম ডাটাবেস ইউআরএল
-REALTIME_DATABASE_URL = "https://telegram-bot-skyzone-it-default-rtdb.firebaseio.com" 
+# রিয়েলটাইম ডাটাবেস ইউআরএল (আপনার প্রজেক্ট অনুযায়ী এটি নিশ্চিত করুন)
+REALTIME_DATABASE_URL = "https://telegram-bot-skyzone-it-default-rtdb.firebaseio.com"
 
 # ফায়ারবেস ইনিশিয়ালাইজেশন
-db = None # Firestore ক্লায়েন্ট
-rtdb = None # Realtime DB ক্লায়েন্ট
+db = None  # Firestore ক্লায়েন্ট
+rtdb = None  # Realtime DB ক্লায়েন্ট
 
 try:
     if FIREBASE_JSON:
@@ -40,24 +40,23 @@ try:
             cred_info = json.loads(FIREBASE_JSON)
             cred = credentials.Certificate(cred_info)
             
-            # Firebase অ্যাপ চেক করে ইনিশিয়ালাইজ করা (যাতে ডুপ্লিকেট এরর না আসে)
+            # Firebase অ্যাপ চেক করে ইনিশিয়ালাইজ করা
             if not firebase_admin._apps:
                 firebase_admin.initialize_app(cred, {
                     'databaseURL': REALTIME_DATABASE_URL
                 })
             
-            db = firestore.client() # Firestore ক্লায়েন্ট
-            rtdb = realtime_db.reference() # Realtime DB ক্লায়েন্ট (নাম সংশোধন করা হয়েছে)
-
+            db = firestore.client()
+            rtdb = realtime_db.reference()
             logger.info("✅ Firebase Connected Successfully!")
         except json.JSONDecodeError as e:
-            logger.error(f"❌ Firebase JSON Decode Error: Check FIREBASE_SERVICE_ACCOUNT string. Error: {e}")
+            logger.error(f"❌ Firebase JSON Decode Error: {e}")
         except Exception as e:
             logger.error(f"❌ Firebase Initialization Failed: {e}")
     else:
         logger.warning("⚠️ FIREBASE_SERVICE_ACCOUNT not found! Running without database.")
 except Exception as e:
-    logger.error(f"❌ A critical error occurred during global setup: {e}")
+    logger.error(f"❌ Critical setup error: {e}")
 
 # লিংক কনফিগারেশন
 LINKS = {
@@ -75,11 +74,10 @@ COLLECTION_SUBMISSIONS = "submissions"
 STATE_AWAITING_LINK = 1
 
 # ==========================================
-# ২. ডাটাবেস ফাংশন (Core Logic)
+# ২. ডাটাবেস ফাংশন
 # ==========================================
 
 async def get_or_create_user(user_id, username, first_name):
-    """ইউজার ডাটাবেসে আছে কিনা চেক করে, না থাকলে তৈরি করে"""
     if db is None:
         return {"status": "NO_DB"}
     
@@ -110,7 +108,6 @@ async def get_or_create_user(user_id, username, first_name):
         return {"status": "NO_DB"}
 
 async def get_balance(user_id):
-    """ইউজারের বর্তমান ব্যালেন্স চেক করা"""
     if db is None: return 0.0
     try:
         doc = db.collection(COLLECTION_USERS).document(str(user_id)).get()
@@ -121,7 +118,6 @@ async def get_balance(user_id):
     return 0.0
 
 async def update_user_state(user_id, state):
-    """ইউজারের কনভারসেশন স্টেট আপডেট করে"""
     if db is None: return
     try:
         user_ref = db.collection(COLLECTION_USERS).document(str(user_id))
@@ -130,7 +126,6 @@ async def update_user_state(user_id, state):
         logger.error(f"Error updating state for {user_id}: {e}")
 
 async def get_user_state(user_id):
-    """ইউজারের কনভারসেশন স্টেট পায়"""
     if db is None: return 0
     try:
         doc = db.collection(COLLECTION_USERS).document(str(user_id)).get()
@@ -141,7 +136,7 @@ async def get_user_state(user_id):
     return 0
 
 # ==========================================
-# ৩. ইউজার হ্যান্ডেলার (User Handlers)
+# ৩. ইউজার হ্যান্ডেলার
 # ==========================================
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -281,15 +276,15 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text("👑 <b>অ্যাডমিন প্যানেল</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 # ==========================================
-# ৫. মেইন ফাংশন (ফিক্স করা হয়েছে)
+# ৫. মেইন ফাংশন
 # ==========================================
 
 def main() -> None:
     if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN missing!")
+        logger.error("❌ BOT_TOKEN missing! Check Environment Variables.")
         return 
 
-    # Application তৈরি করা (ContextTypes এরর ফিক্স করা হয়েছে)
+    # Application তৈরি
     application = Application.builder().token(BOT_TOKEN).build()
 
     # হ্যান্ডেলার যোগ করা
@@ -306,11 +301,11 @@ def main() -> None:
             port=PORT,
             url_path=BOT_TOKEN,
             webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
-            allowed_updates=Update.ALL_TYPES # এখানে মুভ করা হয়েছে
+            allowed_updates=Update.ALL_TYPES
         )
     else:
         logger.warning("⚠️ Running in Polling mode.")
-        application.run_polling(allowed_updates=Update.ALL_TYPES) # এখানে মুভ করা হয়েছে
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
