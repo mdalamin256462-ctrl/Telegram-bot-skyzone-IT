@@ -3,7 +3,8 @@ import logging
 import json
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
+# ContextTypes ইমপোর্ট নিশ্চিত করা হয়েছে
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler 
 # Firebase ক্লায়েন্ট ইমপোর্ট
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -176,7 +177,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # মেইন মেনুতে ফিরে যাওয়া
     if data == "back_to_main":
-        # এখানে start_command কল করা নিরাপদ নয়, তাই মেইন মেনু মেসেজটি আবার তৈরি করা হলো
         first_name = query.from_user.first_name
         
         welcome_message = f"আসসালামু আলাইকুম, <b>{first_name}</b>! 👋\n\nপ্রধান মেনু থেকে কাজ শুরু করুন।"
@@ -272,8 +272,8 @@ def main() -> None:
         logger.error("❌ Error: BOT_TOKEN is missing! Please set the environment variable.")
         return 
 
-    # >>> V20 ফিক্স: এটি পুরাতন Updater এররটি ঠিক করবে <<<
-    defaults = ContextTypes.DEFAULT_TYPE(allow_update_types=Update.ALL_TYPES)
+    # >>> V20 ফিক্স: ContextTypes ব্যবহার করে পুরাতন Updater এররটি ঠিক করা হলো <<<
+    defaults = ContextTypes.DEFAULT_TYPE(allowed_updates=Update.ALL_TYPES) # 'allow_update_types' এর বদলে 'allowed_updates' ব্যবহার করা হয়েছে
     
     application = Application.builder().token(BOT_TOKEN).context_types(defaults).build()
 
