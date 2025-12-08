@@ -13,7 +13,6 @@ from firebase_admin import credentials, firestore, db as realtime_db
 # ==========================================
 # ১. কনফিগারেশন এবং সেটআপ
 # ==========================================
-
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -22,9 +21,9 @@ logger = logging.getLogger(__name__)
 
 # এনভায়রনমেন্ট ভেরিয়েবল
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_USER_ID_STR = os.getenv("ADMIN_USER_ID") # সুপার অ্যাডমিন
+ADMIN_USER_ID_STR = os.getenv("ADMIN_USER_ID")  # সুপার অ্যাডমিন
 # সাপোর্ট গ্রুপ আইডি (হার্ডকোড করা বা এনভায়রনমেন্ট থেকে নেওয়া)
-SUPPORT_GROUP_ID = os.getenv("SUPPORT_GROUP_ID", "-1002337825231") 
+SUPPORT_GROUP_ID = os.getenv("SUPPORT_GROUP_ID", "-1002337825231")
 FIREBASE_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.environ.get('PORT', 8080))
@@ -62,11 +61,11 @@ DEFAULT_UI_CONFIG = {
     "btn_withdraw": {"text": "💸 উত্তোলন (Withdraw)", "show": True},
     "btn_info": {"text": "ℹ️ তথ্য দেখুন", "show": True},
     "btn_refer": {"text": "👥 রেফার করুন", "show": True},
-    "btn_guide": {"text": "📚 কাজের বিবরণ", "show": True},
+    "btn_guide": {"text": "📚 ভিডিও দেখে কাজ শিখুন", "show": True}, # আপডেটেড টেক্সট
     "btn_support": {"text": "💬 সাপোর্ট", "show": True},
     
     # Custom Dynamic Buttons
-    "custom_buttons": [], 
+    "custom_buttons": [],
 
     # Submit Work Sub-Menu Buttons
     "btn_sub_review": {"text": "📋 রিভিউ তথ্য জমা", "show": True},
@@ -124,6 +123,7 @@ STATE_ADMIN_ADD_CUSTOM_BTN_TEXT = 100
 STATE_ADMIN_ADD_CUSTOM_BTN_URL = 101
 STATE_ADMIN_REPLY_ID = 110
 STATE_ADMIN_REPLY_MSG = 111
+
 
 # ==========================================
 # ২. ডাটাবেস এবং হেল্পার ফাংশন
@@ -209,17 +209,35 @@ async def is_super_admin(user_id):
     return str(user_id) == str(ADMIN_USER_ID_STR)
 
 async def is_admin(user_id):
-    if str(user_id) == str(ADMIN_USER_ID_STR): return True
+    if str(user_id) == str(ADMIN_USER_ID_STR):
+        return True
     if db:
         doc = db.collection(COLLECTION_ADMINS).document(str(user_id)).get()
         return doc.exists
     return False
+
+# নতুন ফাংশন: সব অ্যাডমিনের আইডি পাওয়ার জন্য
+async def get_all_admin_ids():
+    admin_ids = set()
+    if ADMIN_USER_ID_STR:
+        admin_ids.add(str(ADMIN_USER_ID_STR))
+    
+    if db:
+        try:
+            docs = db.collection(COLLECTION_ADMINS).stream()
+            for doc in docs:
+                admin_ids.add(doc.id)
+        except Exception as e:
+            logger.error(f"Error fetching admin IDs: {e}")
+            
+    return list(admin_ids)
 
 async def get_or_create_user(user_id, username, first_name, referred_by=None):
     if db is None: return {"status": "NO_DB"}
     try:
         user_ref = db.collection(COLLECTION_USERS).document(str(user_id))
         user_doc = user_ref.get()
+        
         if user_doc.exists:
             user_data = user_doc.to_dict()
             if user_data.get('is_blocked', False):
@@ -234,9 +252,10 @@ async def get_or_create_user(user_id, username, first_name, referred_by=None):
                     db.collection(COLLECTION_USERS).document(str(referred_by)).update({
                         'referral_count': firestore.Increment(1)
                     })
-                except: pass
+                except:
+                    pass
                 logger.info(f"Referral bonus {bonus_amount} given to {referred_by}")
-            
+
             new_user = {
                 'user_id': user_id,
                 'username': username,
@@ -356,6 +375,7 @@ async def remove_admin(admin_id):
     except:
         return False
 
+
 # ==========================================
 # ৩. ইউজার হ্যান্ডেলার (User Handlers)
 # ==========================================
@@ -363,13 +383,11 @@ async def remove_admin(admin_id):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = """
 🔰 <b>কমান্ড লিস্ট:</b>
-
 /start - বট চালু করুন
 /admin - অ্যাডমিন প্যানেল (শুধুমাত্র অ্যাডমিন)
 /help - কমান্ড লিস্ট দেখুন
 
-💬 <b>সাপোর্ট:</b>
-কোনো সমস্যা হলে সরাসরি মেসেজ দিন, অ্যাডমিন রিপ্লাই দিবে।
+💬 <b>সাপোর্ট:</b> কোনো সমস্যা হলে সরাসরি মেসেজ দিন, অ্যাডমিন রিপ্লাই দিবে।
 """
     await update.message.reply_text(text, parse_mode='HTML')
 
@@ -380,11 +398,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     user = update.effective_user
     user_id = user.id
-    
     referred_by = None
+    
     if context.args and context.args[0].isdigit():
         referred_by = int(context.args[0])
-    
+
     result = await get_or_create_user(user_id, user.username or 'N/A', user.first_name, referred_by)
     
     if result.get("status") == "blocked":
@@ -398,50 +416,48 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update_user_state(user_id, STATE_IDLE)
     
     ui_config = await get_ui_config()
+    
     keyboard = []
     
     if ui_config.get("btn_review_gen", {}).get("show", True):
         cfg = ui_config["btn_review_gen"]
         keyboard.append([InlineKeyboardButton(cfg.get("text", "🌐 রিভিউ জেনারেটর"), url=cfg.get("url"))])
-    
+        
     custom_btns = ui_config.get("custom_buttons", [])
     for btn in custom_btns:
         keyboard.append([InlineKeyboardButton(btn['text'], url=btn['url'])])
-
+    
     row2 = []
     if ui_config.get("btn_submit_work", {}).get("show", True):
         row2.append(InlineKeyboardButton(ui_config["btn_submit_work"].get("text", "💰 কাজ জমা দিন"), callback_data="submit_work"))
     if ui_config.get("btn_balance", {}).get("show", True):
         row2.append(InlineKeyboardButton(ui_config["btn_balance"].get("text", "📈 ব্যালেন্স"), callback_data="show_account"))
-    if row2:
-        keyboard.append(row2)
-        
+    if row2: keyboard.append(row2)
+    
     row3 = []
     if ui_config.get("btn_withdraw", {}).get("show", True):
         row3.append(InlineKeyboardButton(ui_config["btn_withdraw"].get("text", "💸 উত্তোলন"), callback_data="start_withdraw"))
     if ui_config.get("btn_info", {}).get("show", True):
         row3.append(InlineKeyboardButton(ui_config["btn_info"].get("text", "ℹ️ তথ্য দেখুন"), callback_data="info_links_menu"))
-    if row3:
-        keyboard.append(row3)
-        
+    if row3: keyboard.append(row3)
+    
     row4 = []
     if ui_config.get("btn_refer", {}).get("show", True):
         row4.append(InlineKeyboardButton(ui_config["btn_refer"].get("text", "👥 রেফার করুন"), callback_data="show_referral_link"))
     if ui_config.get("btn_guide", {}).get("show", True):
-        row4.append(InlineKeyboardButton(ui_config["btn_guide"].get("text", "📚 কাজের বিবরণ"), callback_data="show_guide"))
-    if row4:
-        keyboard.append(row4)
+        row4.append(InlineKeyboardButton(ui_config["btn_guide"].get("text", "📚 ভিডিও দেখে কাজ শিখুন"), callback_data="show_guide"))
+    if row4: keyboard.append(row4)
 
     if ui_config.get("btn_support", {}).get("show", True):
         keyboard.append([InlineKeyboardButton(ui_config["btn_support"].get("text", "💬 সাপোর্ট"), url=ui_config.get("link_support", {}).get("url", "https://t.me/AfMdshakil"))])
-
+        
     if await is_admin(user_id):
         keyboard.append([InlineKeyboardButton("👑 অ্যাডমিন প্যানেল", callback_data="open_admin_panel")])
-    
+
     welcome_text = f"আসসালামু আলাইকুম, <b>{user.first_name}</b>! 👋\n\nSkyzone IT বট-এ আপনাকে স্বাগতম।"
     if result.get("status") == "created" and result['data'].get('referred_by'):
         welcome_text += f"\n🎉 রেফারেল বোনাস যোগ করা হয়েছে।"
-    
+
     if update.callback_query:
         try:
             await update.callback_query.edit_message_text(welcome_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -450,12 +466,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     else:
         await update.message.reply_text(welcome_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    
     data = query.data
     user_id = query.from_user.id
-
+    
     if data == "back_to_main":
         await update_user_state(user_id, STATE_IDLE)
         await start_command(update, context)
@@ -470,14 +488,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if cfg.get("show", True):
                 return InlineKeyboardButton(cfg.get("text", "Link"), url=cfg.get("url"))
             return None
-
+        
         r1 = []
         b1 = get_link_btn("link_fb_group")
         b2 = get_link_btn("link_fb_page")
         if b1: r1.append(b1)
         if b2: r1.append(b2)
         if r1: link_keyboard.append(r1)
-        
+
         r2 = []
         b3 = get_link_btn("link_yt")
         b4 = get_link_btn("link_tg_channel")
@@ -491,14 +509,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if b5: r3.append(b5)
         if b6: r3.append(b6)
         if r3: link_keyboard.append(r3)
-
+        
         b7 = get_link_btn("link_website")
         if b7: link_keyboard.append([b7])
         
         link_keyboard.append([InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")])
+        
         await query.edit_message_text(
             "ℹ️ <b>সকল তথ্য ও লিংকসমূহ:</b>\n\nনিচের বাটনগুলো ব্যবহার করে আমাদের সাথে যুক্ত হন।",
-            reply_markup=InlineKeyboardMarkup(link_keyboard), parse_mode='HTML'
+            reply_markup=InlineKeyboardMarkup(link_keyboard),
+            parse_mode='HTML'
         )
         return
 
@@ -506,16 +526,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update_user_state(user_id, STATE_SUB_SELECT_TYPE)
         ui_config = await get_ui_config()
         keyboard = []
-        
         if ui_config.get("btn_sub_review", {}).get("show", True):
             keyboard.append([InlineKeyboardButton(ui_config["btn_sub_review"].get("text", "📋 রিভিউ তথ্য জমা"), callback_data="sub_review_data")])
-        
         if ui_config.get("btn_sub_market", {}).get("show", True):
             keyboard.append([InlineKeyboardButton(ui_config["btn_sub_market"].get("text", "🔗 মার্কেটিং লিংক জমা"), callback_data="sub_market_link")])
-            
+        
         keyboard.append([InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")])
         await query.edit_message_text("কাজের ধরন নির্বাচন করুন:", reply_markup=InlineKeyboardMarkup(keyboard))
-
+        
     elif data == "sub_market_link":
         await update_user_state(user_id, STATE_SUB_MARKET_LINK)
         await query.edit_message_text("মার্কেটিং গুগল সিট লিংক দিন:\n(বাতিল করতে /start)")
@@ -549,13 +567,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     elif data == "show_guide":
+        # ============================================================
+        # FIX FOR ERROR: telegram.error.BadRequest: Can't parse entities
+        # ============================================================
         ui_config = await get_ui_config()
         content = ui_config.get("text_guide_content", {}).get("text", "No guide available.")
-        await query.edit_message_text(
-            content,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]]),
-            parse_mode='HTML'
-        )
+        
+        try:
+            # প্রথমে HTML হিসেবে দেখানোর চেষ্টা করবে
+            await query.edit_message_text(
+                content,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]]),
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            # যদি HTML এ ভুল থাকে (যেমন < ট্যাগ ক্লোজ না করা), তাহলে সাধারণ টেক্সট হিসেবে দেখাবে
+            logger.error(f"HTML Parse Error in Guide: {e}")
+            await query.edit_message_text(
+                content,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]])
+                # parse_mode সরানো হলো যাতে ক্র্যাশ না করে
+            )
 
     elif data == "open_admin_panel":
         if await is_admin(user_id):
@@ -565,12 +597,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.text: return
-    
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     text = update.message.text
     chat_type = update.effective_chat.type
-    
+
     if not db: return
 
     # ==========================================
@@ -582,10 +613,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # চেক করি ইউজার ওই গ্রুপের অ্যাডমিন কিনা
             member_status = await context.bot.get_chat_member(chat_id, user_id)
             is_group_admin = member_status.status in ['administrator', 'creator']
-            
+
             # ১. যদি অ্যাডমিন হয়, তাহলে কোনো রেস্ট্রিকশন নেই (লিংক দিতে পারবে, রিপ্লাই পাবে না)
             if is_group_admin:
-                return 
+                return
 
             # ২. সাধারণ ইউজার: লিংক চেক
             # সাধারণ লিংক (http, https, www) বা টেলিগ্রাম লিংক (t.me)
@@ -615,7 +646,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # 🔒 ব্যক্তিগত চ্যাট (Private Chat) লজিক
     # ==========================================
     # যদি গ্রুপ না হয়, অর্থাৎ প্রাইভেট চ্যাট হয়, তখন নিচের কাজগুলো চলবে
-
     if chat_type != ChatType.PRIVATE:
         return
 
@@ -625,8 +655,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if state == STATE_IDLE and not text.startswith('/'):
         # মেসেজ ফরওয়ার্ড করা সাপোর্ট গ্রুপে
         msg_header = f"📩 <b>New Support Message</b>\nUser: {update.effective_user.first_name} (ID: <code>{user_id}</code>)\n\nMsg: {text}"
-        
         target_chat = SUPPORT_GROUP_ID if SUPPORT_GROUP_ID else ADMIN_USER_ID_STR
+        
         if target_chat:
             try:
                 await context.bot.send_message(chat_id=target_chat, text=msg_header, parse_mode='HTML')
@@ -654,7 +684,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         temp_data['email'] = text
         await update_user_state(user_id, STATE_SUB_AWAITING_NAME, temp_data)
         await update.message.reply_text("৩/৪: প্রোফাইল নাম লিখুন:")
-        
+
     elif state == STATE_SUB_AWAITING_NAME:
         temp_data['review_name'] = text
         await update_user_state(user_id, STATE_SUB_AWAITING_DEVICE, temp_data)
@@ -692,7 +722,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             target_uid = text
             curr_bal = await get_balance(target_uid)
             ref_count = await get_user_referral_count(target_uid)
-            
             temp_data['target_uid'] = int(text)
             await update_user_state(user_id, STATE_ADMIN_AWAITING_BALANCE_AMOUNT, temp_data)
             await update.message.reply_text(
@@ -700,7 +729,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
         else:
             await update.message.reply_text("❌ শুধু সংখ্যায় ID দিন।")
-            
+
     elif state == STATE_ADMIN_AWAITING_BALANCE_AMOUNT:
         try:
             op = text[0]
@@ -713,12 +742,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await update.message.reply_text("✅ ব্যালেন্স আপডেট সফল!")
                 try:
                     await context.bot.send_message(target, f"🔔 অ্যাডমিন আপনার ব্যালেন্স আপডেট করেছে: {text} BDT")
-                except: pass
+                except:
+                    pass
             else:
                 await update.message.reply_text("❌ ব্যর্থ হয়েছে।")
         except:
             await update.message.reply_text("❌ ফরম্যাট: +10 বা -10")
-
+            
     elif state == STATE_ADMIN_REPLY_ID:
         if text.isdigit():
             temp_data['reply_uid'] = text
@@ -726,7 +756,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(f"📝 User {text} কে কী বার্তা পাঠাতে চান লিখুন:")
         else:
             await update.message.reply_text("❌ সঠিক User ID দিন।")
-
+            
     elif state == STATE_ADMIN_REPLY_MSG:
         target_uid = temp_data.get('reply_uid')
         try:
@@ -740,7 +770,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         temp_data['btn_text'] = text
         await update_user_state(user_id, STATE_ADMIN_ADD_CUSTOM_BTN_URL, temp_data)
         await update.message.reply_text("🔗 বাটনের লিংক (URL) দিন:")
-        
+
     elif state == STATE_ADMIN_ADD_CUSTOM_BTN_URL:
         if 'http' in text:
             btn_text = temp_data.get('btn_text')
@@ -777,7 +807,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await context.bot.send_message(uid, f"📢 <b>নোটিশ:</b>\n{text}", parse_mode='HTML')
                 count += 1
                 await asyncio.sleep(0.05)
-            except: pass
+            except:
+                pass
         await update.message.reply_text(f"✅ সম্পন্ন। পাঠানো হয়েছে: {count}")
 
     elif state == STATE_ADMIN_ADD_ADMIN_ID:
@@ -803,7 +834,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update_user_state(user_id, STATE_IDLE)
         else:
             await update.message.reply_text("❌ সঠিক আইডি দিন।")
-
+            
     elif state == STATE_ADMIN_USER_ACTION_ID:
         if text.isdigit():
             target_uid = text
@@ -849,6 +880,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update_user_state(user_id, STATE_IDLE)
         await update.message.reply_text("✅ গাইড কন্টেন্ট আপডেট হয়েছে!")
 
+
 # হেল্পার সাবমিশন ফাংশন
 async def save_submission(update, context, user_id, s_type, link=None, data=None):
     sub_data = {
@@ -859,6 +891,7 @@ async def save_submission(update, context, user_id, s_type, link=None, data=None
         'status': 'pending',
         'submitted_at': firestore.SERVER_TIMESTAMP
     }
+    
     details_str = ""
     if link:
         sub_data['link'] = link
@@ -871,17 +904,22 @@ async def save_submission(update, context, user_id, s_type, link=None, data=None
         if 'device_name' in data: details_str += f"📱 Device: {data['device_name']}\n"
 
     ref = db.collection(COLLECTION_SUBMISSIONS).add(sub_data)
+    
     await update_user_state(user_id, STATE_IDLE)
     await update.message.reply_text("✅ কাজ জমা হয়েছে! অ্যাডমিন চেক করবে।")
     
+    # 🔔 ============================================================
+    # Notification to ALL Admins
+    # ============================================================
     msg = f"🔔 <b>নতুন কাজ জমা!</b>\n\n🆔 User ID: <code>{user_id}</code>\n📂 Type: {s_type}\n\n📝 <b>Details:</b>\n{details_str}"
-    
     kb = [[InlineKeyboardButton("✅ Approve", callback_data=f"adm_app_{ref[1].id}"), InlineKeyboardButton("❌ Reject", callback_data=f"adm_rej_{ref[1].id}")]]
     
-    if ADMIN_USER_ID_STR:
+    all_admins = await get_all_admin_ids()
+    for admin_id in all_admins:
         try:
-            await context.bot.send_message(ADMIN_USER_ID_STR, msg, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(kb))
-        except: pass
+            await context.bot.send_message(admin_id, msg, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(kb))
+        except Exception as e:
+            logger.error(f"Failed to notify admin {admin_id}: {e}")
 
 async def save_withdrawal(update, context, user_id, temp_data):
     w_data = {
@@ -892,21 +930,27 @@ async def save_withdrawal(update, context, user_id, temp_data):
         'status': 'pending',
         'time': firestore.SERVER_TIMESTAMP
     }
+    
     ref = db.collection(COLLECTION_WITHDRAWALS).add(w_data)
     await update_balance(user_id, -temp_data['amount'])
-    
     await update_user_state(user_id, STATE_IDLE)
     await update.message.reply_text("✅ উইথড্র রিকোয়েস্ট জমা হয়েছে! স্ট্যাটাস: পেন্ডিং।")
     
+    # 🔔 ============================================================
+    # Notification to ALL Admins
+    # ============================================================
     msg = f"💸 <b>উইথড্র!</b>\nID: <code>{user_id}</code>\nAmount: {temp_data['amount']}\nTo: {temp_data['target']} ({temp_data['method']})"
     kb = [
         [InlineKeyboardButton("✅ Approve (Paid)", callback_data=f"adm_pay_{ref[1].id}")],
         [InlineKeyboardButton("❌ Reject (Refund)", callback_data=f"adm_wrej_{ref[1].id}")]
     ]
-    if ADMIN_USER_ID_STR:
+    
+    all_admins = await get_all_admin_ids()
+    for admin_id in all_admins:
         try:
-            await context.bot.send_message(ADMIN_USER_ID_STR, msg, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(kb))
-        except: pass
+            await context.bot.send_message(admin_id, msg, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(kb))
+        except Exception as e:
+            logger.error(f"Failed to notify admin {admin_id}: {e}")
 
 async def withdraw_method_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -927,14 +971,12 @@ async def withdraw_method_handler(update: Update, context: ContextTypes.DEFAULT_
 async def admin_reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if not await is_admin(user_id): return
-    
     await update_user_state(user_id, STATE_ADMIN_REPLY_ID)
     await update.message.reply_text("📝 কার সাথে কথা বলতে চান? তার **User ID** দিন:")
 
 async def show_admin_panel(update, context, user_id):
     is_super = await is_super_admin(user_id)
     total_users = await get_total_users_count()
-    
     text = f"👑 <b>অ্যাডমিন প্যানেল</b>\n\n📊 মোট ইউজার: {total_users} জন\nআপনার রোল: {'🔥 সুপার অ্যাডমিন' if is_super else '👮 অ্যাডমিন'}"
     
     keyboard = [
@@ -952,22 +994,24 @@ async def show_admin_panel(update, context, user_id):
         keyboard.append([InlineKeyboardButton("📝 গাইড এডিট করুন", callback_data="admin_edit_guide")])
     
     keyboard.append([InlineKeyboardButton("🔙 মেইন মেনু", callback_data="back_to_main")])
-    
+
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
     else:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
+
 async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    
     user_id = str(query.from_user.id)
     data = query.data
     
     if not await is_admin(user_id):
         await query.answer("Access Denied", show_alert=True)
         return
-
+        
     is_super = await is_super_admin(user_id)
 
     # --- বেসিক অ্যাডমিন অ্যাকশন ---
@@ -999,11 +1043,12 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton("🔙 ব্যাক", callback_data="open_admin_panel")]
         ]
         await query.edit_message_text("🛑 কি করতে চান?", reply_markup=InlineKeyboardMarkup(kb))
-        
+
     elif data in ["adm_usr_block", "adm_usr_unblock", "adm_usr_delete"]:
         action = data.split('_')[-1]
         await update_user_state(user_id, STATE_ADMIN_USER_ACTION_ID, temp_data={'action': action})
         await query.edit_message_text(f"🛑 টার্গেট ইউজারের **ID** দিন ({action} করার জন্য):")
+
 
     # --- সুপার অ্যাডমিন সেটিংস ---
     elif data == "admin_settings_menu":
@@ -1027,12 +1072,13 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if not is_super: return
         await update_user_state(user_id, STATE_ADMIN_AWAITING_REFER_BONUS)
         await query.edit_message_text(f"🎁 নতুন বোনাস কত দিতে চান? (সংখ্যা লিখুন):")
-        
+
     elif data == "admin_edit_guide":
         if not is_super: return
         await update_user_state(user_id, STATE_ADMIN_EDIT_GUIDE_TEXT)
         curr_text = (await get_ui_config()).get('text_guide_content', {}).get('text', 'N/A')
         await query.edit_message_text(f"📚 **নতুন গাইড কন্টেন্ট লিখুন:**\n\nবর্তমান:\n{curr_text[:50]}...", parse_mode='HTML')
+
 
     # --- UI ম্যানেজমেন্ট মেনু ---
     elif data == "admin_ui_menu":
@@ -1052,7 +1098,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if not is_super: return
         await update_user_state(user_id, STATE_ADMIN_ADD_CUSTOM_BTN_TEXT)
         await query.edit_message_text("➕ বাটনের নাম (Title) লিখুন:")
-
+        
     elif data == "aui_rem_custom_list":
         if not is_super: return
         ui_config = await get_ui_config()
@@ -1062,7 +1108,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             kb.append([InlineKeyboardButton(f"🗑️ {btn['text']}", callback_data=f"aui_delc_{idx}")])
         kb.append([InlineKeyboardButton("🔙 ব্যাক", callback_data="admin_ui_menu")])
         await query.edit_message_text("🗑️ কোন বাটনটি ডিলিট করতে চান?", reply_markup=InlineKeyboardMarkup(kb))
-
+        
     elif data.startswith("aui_delc_"):
         idx = int(data.split('_')[-1])
         await remove_custom_button(idx)
@@ -1077,10 +1123,15 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         for key, val in ui_config.items():
             if key == "custom_buttons": continue
             is_match = False
-            if cat == "home" and key.startswith("btn_") and not key.startswith("btn_sub_"): is_match = True
-            elif cat == "sub" and key.startswith("btn_sub_"): is_match = True
-            elif cat == "info" and key.startswith("link_"): is_match = True
-            elif cat == "misc" and not (key.startswith("btn_") or key.startswith("link_")): is_match = True
+            
+            if cat == "home" and key.startswith("btn_") and not key.startswith("btn_sub_"):
+                is_match = True
+            elif cat == "sub" and key.startswith("btn_sub_"):
+                is_match = True
+            elif cat == "info" and key.startswith("link_"):
+                is_match = True
+            elif cat == "misc" and not (key.startswith("btn_") or key.startswith("link_")):
+                is_match = True
             
             if is_match:
                 status = "👁️" if val.get("show", True) else "🚫"
@@ -1095,12 +1146,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         key = data.replace("aui_sel_", "")
         ui_config = await get_ui_config()
         item = ui_config.get(key, {})
-        
         status_text = "Visible" if item.get("show", True) else "Hidden"
         toggle_action = "Hide" if item.get("show", True) else "Show"
         
         text = f"🔧 **Edit Item:** `{key}`\n\n📝 Text: {item.get('text')}\n🔗 Link: {item.get('url', 'N/A')}\n👀 Status: {status_text}"
-        
         kb = [
             [InlineKeyboardButton("✏️ নাম পরিবর্তন (Text)", callback_data=f"aui_ren_{key}")],
             [InlineKeyboardButton(f"👁️ {toggle_action}", callback_data=f"aui_tog_{key}")],
@@ -1111,7 +1160,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             kb.insert(1, [InlineKeyboardButton("🔗 লিংক পরিবর্তন", callback_data=f"aui_url_{key}")])
             
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
-
+        
     elif data.startswith("aui_ren_"):
         key = data.replace("aui_ren_", "")
         await update_user_state(user_id, STATE_ADMIN_EDIT_UI_TEXT, temp_data={'target_key': key})
@@ -1154,18 +1203,19 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data.startswith("adm_app_") or data.startswith("adm_rej_"):
         sub_id = data.split('_')[-1]
         is_approve = "app" in data
+        
         try:
             ref = db.collection(COLLECTION_SUBMISSIONS).document(sub_id)
             doc = ref.get()
             if not doc.exists:
                 await query.answer("পাওয়া যায়নি", show_alert=True)
                 return
-                
+            
             s_data = doc.to_dict()
             if s_data['status'] != 'pending':
                 await query.answer("আগেই প্রসেস করা হয়েছে", show_alert=True)
                 return
-
+            
             status = 'approved' if is_approve else 'rejected'
             ref.update({'status': status, 'by': user_id})
             
@@ -1178,24 +1228,27 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 await context.bot.send_message(s_data['user_id'], "❌ আপনার জমা দেওয়া কাজ রিজেক্ট হয়েছে।")
                 
             await query.edit_message_text(f"{query.message.text}\n\n{status.upper()} by {query.from_user.first_name}")
-        except: pass
+        except:
+            pass
 
     # --- পেমেন্ট মার্ক পেইড / রিজেক্ট ---
     elif data.startswith("adm_pay_"):
         w_id = data.split('_')[-1]
+        
         try:
             ref = db.collection(COLLECTION_WITHDRAWALS).document(w_id)
             doc = ref.get()
             if not doc.exists or doc.to_dict()['status'] != 'pending':
                 await query.answer("ভুল রিকোয়েস্ট বা ইতিমধ্যে প্রসেস করা হয়েছে", show_alert=True)
                 return
-            
+                
             ref.update({'status': 'paid', 'by': user_id})
             uid = doc.to_dict()['user_id']
             await context.bot.send_message(uid, "💸 আপনার পেমেন্ট পাঠানো হয়েছে! চেক করুন।")
             await query.edit_message_text(f"{query.message.text}\n\n✅ PAID by {query.from_user.first_name}")
-        except: pass
-        
+        except:
+            pass
+
     elif data.startswith("adm_wrej_"):
         w_id = data.split('_')[-1]
         try:
@@ -1233,7 +1286,7 @@ def main() -> None:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("admin", lambda u, c: show_admin_panel(u, c, u.effective_user.id)))
     app.add_handler(CommandHandler("reply", admin_reply_command))
-
+    
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^adm'))
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^set_'))
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^admin_'))
