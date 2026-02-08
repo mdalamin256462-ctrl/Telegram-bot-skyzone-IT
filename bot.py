@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 # এনভায়রনমেন্ট ভেরিয়েবল
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_USER_ID_STR = os.getenv("ADMIN_USER_ID")  # সুপার অ্যাডমিন
-# সাপোর্ট গ্রুপ আইডি (ডিফল্ট সেট করা হলো আপনার দেওয়া আইডি)
 SUPPORT_GROUP_ID = os.getenv("SUPPORT_GROUP_ID", "-1002337825231")
 FIREBASE_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
@@ -55,7 +54,6 @@ except Exception as e:
 
 # ডিফল্ট কনফিগারেশন (UI এবং টেক্সট)
 DEFAULT_UI_CONFIG = {
-    # Main Menu Buttons
     "btn_review_gen": {"text": "🌐 রিভিউ জেনারেটর", "url": "https://sites.google.com/view/review-generator/home", "show": True},
     "btn_submit_work": {"text": "💰 কাজ জমা দিন", "show": True},
     "btn_balance": {"text": "📈 ব্যালেন্স", "show": True},
@@ -64,15 +62,9 @@ DEFAULT_UI_CONFIG = {
     "btn_refer": {"text": "👥 রেফার করুন", "show": True},
     "btn_guide": {"text": "📚 ভিডিও দেখে কাজ শিখুন", "show": True},
     "btn_support": {"text": "💬 সাপোর্ট", "show": True},
-    
-    # Custom Dynamic Buttons
     "custom_buttons": [],
-
-    # Submit Work Sub-Menu Buttons
     "btn_sub_review": {"text": "📋 রিভিউ তথ্য জমা", "show": True},
     "btn_sub_market": {"text": "🔗 মার্কেটিং লিংক জমা", "show": True},
-
-    # Info Menu Links
     "link_fb_group": {"text": "ফেসবুক গ্রুপ", "url": "https://www.facebook.com/groups/1853319645292519/?ref=share&mibextid=NSMWBT", "show": True},
     "link_fb_page": {"text": "ফেসবুক পেজ", "url": "https://www.facebook.com/share/1BX4LQfrq9/", "show": True},
     "link_yt": {"text": "ইউটিউব চ্যানেল", "url": "https://youtube.com/@af.mdshakil?si=QoHvBxpnY4-laCQi", "show": True},
@@ -81,8 +73,6 @@ DEFAULT_UI_CONFIG = {
     "link_tg_payment": {"text": "পেমেন্ট চ্যানেল", "url": "https://t.me/brotheritltd", "show": True},
     "link_website": {"text": "🌐 ওয়েবসাইট", "url": "https://brotheritltd.com", "show": True},
     "link_support": {"text": "👨‍💻 সাপোর্ট (অ্যাডমিন)", "url": "https://t.me/AfMdshakil", "show": True},
-
-    # Dynamic Texts
     "text_guide_content": {"text": "📚 <b>কাজের নিয়মাবলী:</b>\n\n১. লিংক থেকে কাজ সম্পন্ন করুন।\n২. সঠিক প্রমাণ জমা দিন।\n৩. অ্যাডমিন চেক করে পেমেন্ট করবে।", "show": True}
 }
 
@@ -108,7 +98,6 @@ STATE_WITHDRAW_AWAITING_AMOUNT = 20
 STATE_WITHDRAW_AWAITING_METHOD = 21
 STATE_WITHDRAW_AWAITING_NUMBER = 22
 
-# অ্যাডমিন স্টেটস
 STATE_ADMIN_AWAITING_BALANCE_USER_ID = 30
 STATE_ADMIN_AWAITING_BALANCE_AMOUNT = 31
 STATE_ADMIN_AWAITING_REFER_BONUS = 40
@@ -221,7 +210,6 @@ async def get_all_admin_ids():
     admin_ids = set()
     if ADMIN_USER_ID_STR:
         admin_ids.add(str(ADMIN_USER_ID_STR))
-    
     if db:
         try:
             docs = db.collection(COLLECTION_ADMINS).stream()
@@ -229,7 +217,6 @@ async def get_all_admin_ids():
                 admin_ids.add(doc.id)
         except Exception as e:
             logger.error(f"Error fetching admin IDs: {e}")
-            
     return list(admin_ids)
 
 async def get_or_create_user(user_id, username, first_name, referred_by=None):
@@ -392,7 +379,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(text, parse_mode='HTML')
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # গ্রুপ চ্যাটে /start কাজ করার দরকার নেই
     if update.effective_chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
         return
 
@@ -589,7 +575,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.answer("Access Denied", show_alert=True)
 
 # ==========================================
-# 🔥 MAIN MESSAGE HANDLER (UPDATED)
+# 🔥 MAIN MESSAGE HANDLER
 # ==========================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.text: return
@@ -600,20 +586,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if not db: return
 
-    # -----------------------------------------------------------
     # [1] GROUP CHAT LOGIC (SUPPORT GROUP)
-    # -----------------------------------------------------------
     if str(chat_id) == str(SUPPORT_GROUP_ID):
         try:
-            # ১. চেক করি ইউজার ওই গ্রুপের অ্যাডমিন কিনা
             member_status = await context.bot.get_chat_member(chat_id, user_id)
             is_group_admin = member_status.status in ['administrator', 'creator']
 
-            # যদি অ্যাডমিন হয়, তাহলে কোনো রেস্ট্রিকশন নেই এবং বট রিপ্লাই দিবে না
             if is_group_admin:
                 return
 
-            # ২. সাধারণ ইউজার: লিংক চেক (আগের মতোই)
             lower_text = text.lower()
             if 'http' in lower_text or 't.me' in lower_text or '.com' in lower_text:
                 try:
@@ -622,10 +603,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     logger.error(f"Failed to delete link: {e}")
                 return
 
-            # ৩. অটো রিপ্লাই এবং ইনবক্স মেসেজ (24 ঘন্টা লজিক)
-            
-            # Firestore থেকে চেক করি এই ইউজার গত ২৪ ঘন্টায় মেসেজ দিয়েছে কিনা
-            # আমরা আলাদা একটি কালেকশন ব্যবহার করছি যাতে মেইন ডাটাবেসে সমস্যা না হয়
             current_time = datetime.now(timezone.utc)
             doc_ref = db.collection("group_activity").document(str(user_id))
             doc = doc_ref.get()
@@ -633,36 +610,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             should_reply = False
 
             if not doc.exists:
-                # ইউজার একদম নতুন (ডাটাবেসে নেই), তাই রিপ্লাই দেওয়া হবে
                 should_reply = True
             else:
                 data = doc.to_dict()
                 last_time = data.get('last_reply_time')
                 
-                # যদি আগে রিপ্লাই দেওয়া হয়ে থাকে, চেক করি সেটা ২৪ ঘন্টা আগের কিনা
                 if last_time:
-                    # Firestore timestamp কে datetime এ কনভার্ট করা
-                    last_seen_date = last_time
-                    if isinstance(last_seen_date, datetime):
-                        # সময়ের পার্থক্য বের করা
-                        time_diff = current_time - last_seen_date
-                        if time_diff > timedelta(hours=24):
-                            should_reply = True
-                    else:
-                        # যদি ডেট ফরম্যাট না মিলে, সেফটির জন্য রিপ্লাই দিব
+                    try:
+                        last_seen_date = last_time
+                        if isinstance(last_seen_date, datetime):
+                            time_diff = current_time - last_seen_date
+                            if time_diff > timedelta(hours=24):
+                                should_reply = True
+                    except:
                         should_reply = True
                 else:
                     should_reply = True
 
-            # যদি রিপ্লাই দেওয়ার শর্ত পূরণ হয়
             if should_reply:
-                # গ্রুপে রিপ্লাই
                 await update.message.reply_text(
                     "✋ অপেক্ষা করুন, অ্যাডমিন ফ্রি হয়ে আপনার মেসেজের রিপ্লাই দিবে।",
                     reply_to_message_id=update.message.message_id
                 )
-
-                # ইনবক্সে মেসেজ পাঠানো
                 try:
                     bot_username = context.bot.username
                     dm_text = (
@@ -671,37 +640,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         "অথবা আপনি চাইলে সরাসরি এই বটের মাধ্যমে আমাদের সাথে যুক্ত থাকতে পারেন।"
                     )
                     kb = [[InlineKeyboardButton("🤖 বটের সাথে যুক্ত হোন", url=f"https://t.me/{bot_username}")]]
-                    
                     await context.bot.send_message(chat_id=user_id, text=dm_text, reply_markup=InlineKeyboardMarkup(kb), parse_mode='HTML')
-                except Exception as e:
-                    # ইউজার যদি বট ব্লক করে রাখে বা স্টার্ট না করে, তাহলে এই এরর ইগনোর করা হবে
+                except:
                     pass
 
-                # ডাটাবেসে বর্তমান সময় আপডেট করে দেওয়া, যাতে আগামী ২৪ ঘন্টা আর বিরক্ত না করে
                 doc_ref.set({
                     'last_reply_time': firestore.SERVER_TIMESTAMP,
                     'username': update.effective_user.username or "N/A"
                 }, merge=True)
-
-            # রিপ্লাই দিক বা না দিক, ফাংশন এখানে শেষ হবে যাতে গ্রুপের মেসেজের জন্য বটের অন্য লজিক রান না করে
             return
-
         except Exception as e:
             logger.error(f"Group Logic Error: {e}")
             return
 
-    # -----------------------------------------------------------
     # [2] PRIVATE CHAT LOGIC
-    # -----------------------------------------------------------
-    # যদি গ্রুপ না হয়, অর্থাৎ প্রাইভেট চ্যাট হয়, তখন নিচের কাজগুলো চলবে
     if chat_type != ChatType.PRIVATE:
         return
 
     state, temp_data = await get_user_state_and_data(user_id)
 
-    # সাপোর্ট চ্যাট ফরওয়ার্ডিং (যখন ইউজার অলস বসে আছে)
     if state == STATE_IDLE and not text.startswith('/'):
-        # মেসেজ ফরওয়ার্ড করা সাপোর্ট গ্রুপে
         msg_header = f"📩 <b>New Support Message</b>\nUser: {update.effective_user.first_name} (ID: <code>{user_id}</code>)\n\nMsg: {text}"
         target_chat = SUPPORT_GROUP_ID if SUPPORT_GROUP_ID else ADMIN_USER_ID_STR
         
@@ -956,9 +914,6 @@ async def save_submission(update, context, user_id, s_type, link=None, data=None
     await update_user_state(user_id, STATE_IDLE)
     await update.message.reply_text("✅ কাজ জমা হয়েছে! অ্যাডমিন চেক করবে।")
     
-    # 🔔 ============================================================
-    # Notification to ALL Admins
-    # ============================================================
     msg = f"🔔 <b>নতুন কাজ জমা!</b>\n\n🆔 User ID: <code>{user_id}</code>\n📂 Type: {s_type}\n\n📝 <b>Details:</b>\n{details_str}"
     kb = [[InlineKeyboardButton("✅ Approve", callback_data=f"adm_app_{ref[1].id}"), InlineKeyboardButton("❌ Reject", callback_data=f"adm_rej_{ref[1].id}")]]
     
@@ -984,9 +939,6 @@ async def save_withdrawal(update, context, user_id, temp_data):
     await update_user_state(user_id, STATE_IDLE)
     await update.message.reply_text("✅ উইথড্র রিকোয়েস্ট জমা হয়েছে! স্ট্যাটাস: পেন্ডিং।")
     
-    # 🔔 ============================================================
-    # Notification to ALL Admins
-    # ============================================================
     msg = f"💸 <b>উইথড্র!</b>\nID: <code>{user_id}</code>\nAmount: {temp_data['amount']}\nTo: {temp_data['target']} ({temp_data['method']})"
     kb = [
         [InlineKeyboardButton("✅ Approve (Paid)", callback_data=f"adm_pay_{ref[1].id}")],
@@ -1048,6 +1000,8 @@ async def show_admin_panel(update, context, user_id):
     else:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
+async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_admin_panel(update, context, update.effective_user.id)
 
 async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -1332,7 +1286,7 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("admin", lambda u, c: show_admin_panel(u, c, u.effective_user.id)))
+    app.add_handler(CommandHandler("admin", admin_command_handler))
     app.add_handler(CommandHandler("reply", admin_reply_command))
     
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^adm'))
