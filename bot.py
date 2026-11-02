@@ -408,8 +408,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if ui_config.get("btn_review_gen", {}).get("show", True):
         cfg = ui_config["btn_review_gen"]
         url = (cfg.get("url") or "").strip()
+        text = cfg.get("text", "🌐 রিভিউ জেনারেটর")
         if url.startswith("http"):
-            keyboard.append([InlineKeyboardButton(cfg.get("text", "🌐 রিভিউ জেনারেটর"), url=url)])
+            keyboard.append([InlineKeyboardButton(text, url=url)])
+        else:
+            # লিংক খালি থাকলে callback বাটন হিসেবে দেখাবে যাতে এরর না হয়
+            keyboard.append([InlineKeyboardButton(text, callback_data="no_link_review_gen")])
         
     custom_btns = ui_config.get("custom_buttons", [])
     for btn in custom_btns:
@@ -418,6 +422,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             b_text = btn.get('text') or "Link"
             if b_url.startswith("http"):
                 keyboard.append([InlineKeyboardButton(b_text, url=b_url)])
+            else:
+                keyboard.append([InlineKeyboardButton(b_text, callback_data=f"no_link_custom_{b_text[:10]}")])
         except:
             continue
     
@@ -448,6 +454,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         sup_text = ui_config["btn_support"].get("text", "💬 সাপোর্ট")
         if sup_url.startswith("http"):
             keyboard.append([InlineKeyboardButton(sup_text, url=sup_url)])
+        else:
+            # সাপোর্ট লিংক খালি থাকলে ইউজার মেসেজ পাঠাতে পারবে
+            keyboard.append([InlineKeyboardButton(sup_text, callback_data="show_support_info")])
         
     if await is_admin(user_id):
         keyboard.append([InlineKeyboardButton("👑 অ্যাডমিন প্যানেল", callback_data="open_admin_panel")])
@@ -485,8 +494,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             cfg = ui_config.get(key, {})
             if cfg.get("show", True):
                 url = (cfg.get("url") or "").strip()
+                text = cfg.get("text", "Link")
                 if url.startswith("http"):
-                    return InlineKeyboardButton(cfg.get("text", "Link"), url=url)
+                    return InlineKeyboardButton(text, url=url)
+                else:
+                    # লিংক সেট না থাকলে callback দিয়ে দেখাবে
+                    return InlineKeyboardButton(f"{text} (সেট করা হয়নি)", callback_data=f"no_link_{key}")
             return None
         
         r1 = []
@@ -567,32 +580,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     elif data == "show_guide":
-        ui_config = await get_ui_config()
-        content_text = ui_config.get("text_guide_content", {}).get("text", "")
-        if not content_text or not content_text.strip():
-            content_text = """📚 <b>Play Fast Zone iT - কাজের নিয়মাবলী:</b>
+        try:
+            ui_config = await get_ui_config()
+            content_text = ui_config.get("text_guide_content", {}).get("text", "")
+            if not content_text or not content_text.strip():
+                content_text = """<b>📚 Play Fast Zone iT - কাজের নিয়মাবলী:</b>
 
 ১. লিংক থেকে কাজ সম্পন্ন করুন।
 ২. সঠিক প্রমাণ জমা দিন।
-৩. অ্যাডমিন চেক করে পেমেন্ট করবে।"""
-        try:
+৩. অ্যাডমিন চেক করে পেমেন্ট করবে।
+
+👉 কোনো সমস্যা হলে সাপোর্টে মেসেজ দিন।"""
+            await update_user_state(user_id, STATE_IDLE)
             await query.edit_message_text(
                 content_text,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]]),
                 parse_mode='HTML'
             )
         except Exception as e:
-            logger.error(f"HTML Parse Error in Guide: {e}")
+            logger.error(f"Guide Error: {e}")
             try:
                 await query.edit_message_text(
-                    content_text,
+                    "📚 কাজের নিয়মাবলী লোড হচ্ছে...\n\n/back_to_main দিন",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]])
                 )
-            except:
-                await query.edit_message_text(
-                    "Guide load error. Please try /start",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]])
-                )
+            except Exception as e2:
+                logger.error(f"Guide fallback failed: {e2}")
+                await query.answer("গাইড লোড করতে সমস্যা, আবার চেষ্টা করুন", show_alert=True)
 
     elif data == "open_admin_panel":
         if await is_admin(user_id):
