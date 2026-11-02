@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # এনভায়রনমেন্ট ভেরিয়েবল
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_USER_ID_STR = os.getenv("ADMIN_USER_ID")  # সুপার অ্যাডমিন
-SUPPORT_GROUP_ID = os.getenv("SUPPORT_GROUP_ID", "-1002337825231")
+SUPPORT_GROUP_ID = os.getenv("SUPPORT_GROUP_ID", "-1003918236076")
 FIREBASE_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.environ.get('PORT', 8080))
