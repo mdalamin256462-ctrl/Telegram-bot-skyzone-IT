@@ -54,7 +54,7 @@ except Exception as e:
 
 # ডিফল্ট কনফিগারেশন (UI এবং টেক্সট)
 DEFAULT_UI_CONFIG = {
-    "btn_review_gen": {"text": "🌐 রিভিউ জেনারেটর", "url": "https://sites.google.com/view/review-generator/home", "show": True},
+    "btn_review_gen": {"text": "🌐 রিভিউ জেনারেটর", "url": "", "show": True},
     "btn_submit_work": {"text": "💰 কাজ জমা দিন", "show": True},
     "btn_balance": {"text": "📈 ব্যালেন্স", "show": True},
     "btn_withdraw": {"text": "💸 উত্তোলন (Withdraw)", "show": True},
@@ -65,14 +65,14 @@ DEFAULT_UI_CONFIG = {
     "custom_buttons": [],
     "btn_sub_review": {"text": "📋 রিভিউ তথ্য জমা", "show": True},
     "btn_sub_market": {"text": "🔗 মার্কেটিং লিংক জমা", "show": True},
-    "link_fb_group": {"text": "ফেসবুক গ্রুপ", "url": "https://www.facebook.com/groups/1853319645292519/?ref=share&mibextid=NSMWBT", "show": True},
-    "link_fb_page": {"text": "ফেসবুক পেজ", "url": "https://www.facebook.com/share/1BX4LQfrq9/", "show": True},
-    "link_yt": {"text": "ইউটিউব চ্যানেল", "url": "https://youtube.com/@af.mdshakil?si=QoHvBxpnY4-laCQi", "show": True},
-    "link_tg_channel": {"text": "টেলিগ্রাম চ্যানেল", "url": "https://t.me/Skyzone_IT", "show": True},
-    "link_tg_group": {"text": "টেলিগ্রাম গ্রুপ", "url": "https://t.me/Skyzone_IT_chat", "show": True},
-    "link_tg_payment": {"text": "পেমেন্ট চ্যানেল", "url": "https://t.me/brotheritltd", "show": True},
-    "link_website": {"text": "🌐 ওয়েবসাইট", "url": "https://brotheritltd.com", "show": True},
-    "link_support": {"text": "👨‍💻 সাপোর্ট (অ্যাডমিন)", "url": "https://t.me/AfMdshakil", "show": True},
+    "link_fb_group": {"text": "ফেসবুক গ্রুপ", "url": "", "show": True},
+    "link_fb_page": {"text": "ফেসবুক পেজ", "url": "", "show": True},
+    "link_yt": {"text": "ইউটিউব চ্যানেল", "url": "", "show": True},
+    "link_tg_channel": {"text": "টেলিগ্রাম চ্যানেল", "url": "", "show": True},
+    "link_tg_group": {"text": "টেলিগ্রাম গ্রুপ", "url": "", "show": True},
+    "link_tg_payment": {"text": "পেমেন্ট চ্যানেল", "url": "", "show": True},
+    "link_website": {"text": "🌐 ওয়েবসাইট", "url": "", "show": True},
+    "link_support": {"text": "👨‍💻 সাপোর্ট (অ্যাডমিন)", "url": "", "show": True},
     "text_guide_content": {"text": "📚 <b>কাজের নিয়মাবলী:</b>\n\n১. লিংক থেকে কাজ সম্পন্ন করুন।\n২. সঠিক প্রমাণ জমা দিন।\n৩. অ্যাডমিন চেক করে পেমেন্ট করবে।", "show": True}
 }
 
@@ -440,7 +440,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if await is_admin(user_id):
         keyboard.append([InlineKeyboardButton("👑 অ্যাডমিন প্যানেল", callback_data="open_admin_panel")])
 
-    welcome_text = f"আসসালামু আলাইকুম, <b>{user.first_name}</b>! 👋\n\nSkyzone IT বট-এ আপনাকে স্বাগতম।"
+    welcome_text = f"আসসালামু আলাইকুম, <b>{user.first_name}</b>! 👋\n\nPlay Fast Zone iT বট-এ আপনাকে স্বাগতম।"
     if result.get("status") == "created" and result['data'].get('referred_by'):
         welcome_text += f"\n🎉 রেফারেল বোনাস যোগ করা হয়েছে।"
 
