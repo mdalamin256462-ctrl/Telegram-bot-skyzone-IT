@@ -408,12 +408,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if ui_config.get("btn_review_gen", {}).get("show", True):
         cfg = ui_config["btn_review_gen"]
         url = (cfg.get("url") or "").strip()
-        text = cfg.get("text", "🌐 রিভিউ জেনারেটর")
         if url.startswith("http"):
-            keyboard.append([InlineKeyboardButton(text, url=url)])
-        else:
-            # লিংক খালি থাকলে callback বাটন হিসেবে দেখাবে যাতে এরর না হয়
-            keyboard.append([InlineKeyboardButton(text, callback_data="no_link_review_gen")])
+            keyboard.append([InlineKeyboardButton(cfg.get("text", "🌐 রিভিউ জেনারেটর"), url=url)])
         
     custom_btns = ui_config.get("custom_buttons", [])
     for btn in custom_btns:
@@ -422,8 +418,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             b_text = btn.get('text') or "Link"
             if b_url.startswith("http"):
                 keyboard.append([InlineKeyboardButton(b_text, url=b_url)])
-            else:
-                keyboard.append([InlineKeyboardButton(b_text, callback_data=f"no_link_custom_{b_text[:10]}")])
         except:
             continue
     
@@ -454,9 +448,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         sup_text = ui_config["btn_support"].get("text", "💬 সাপোর্ট")
         if sup_url.startswith("http"):
             keyboard.append([InlineKeyboardButton(sup_text, url=sup_url)])
-        else:
-            # সাপোর্ট লিংক খালি থাকলে ইউজার মেসেজ পাঠাতে পারবে
-            keyboard.append([InlineKeyboardButton(sup_text, callback_data="show_support_info")])
         
     if await is_admin(user_id):
         keyboard.append([InlineKeyboardButton("👑 অ্যাডমিন প্যানেল", callback_data="open_admin_panel")])
@@ -494,12 +485,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             cfg = ui_config.get(key, {})
             if cfg.get("show", True):
                 url = (cfg.get("url") or "").strip()
-                text = cfg.get("text", "Link")
                 if url.startswith("http"):
-                    return InlineKeyboardButton(text, url=url)
-                else:
-                    # লিংক সেট না থাকলে callback দিয়ে দেখাবে
-                    return InlineKeyboardButton(f"{text} (সেট করা হয়নি)", callback_data=f"no_link_{key}")
+                    return InlineKeyboardButton(cfg.get("text", "Link"), url=url)
             return None
         
         r1 = []
@@ -588,9 +575,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 ১. লিংক থেকে কাজ সম্পন্ন করুন।
 ২. সঠিক প্রমাণ জমা দিন।
-৩. অ্যাডমিন চেক করে পেমেন্ট করবে।
-
-👉 কোনো সমস্যা হলে সাপোর্টে মেসেজ দিন।"""
+৩. অ্যাডমিন চেক করে পেমেন্ট করবে।"""
             await update_user_state(user_id, STATE_IDLE)
             await query.edit_message_text(
                 content_text,
@@ -601,12 +586,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             logger.error(f"Guide Error: {e}")
             try:
                 await query.edit_message_text(
-                    "📚 কাজের নিয়মাবলী লোড হচ্ছে...\n\n/back_to_main দিন",
+                    content_text,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]])
                 )
-            except Exception as e2:
-                logger.error(f"Guide fallback failed: {e2}")
-                await query.answer("গাইড লোড করতে সমস্যা, আবার চেষ্টা করুন", show_alert=True)
+            except:
+                await query.edit_message_text(
+                    "Guide error, try /start",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ব্যাক", callback_data="back_to_main")]])
+                )
 
     elif data == "open_admin_panel":
         if await is_admin(user_id):
@@ -1103,7 +1090,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton(f"🎁 রেফার বোনাস: {ref_bonus} TK", callback_data="set_refer_bonus")],
             [InlineKeyboardButton("🔙 ব্যাক", callback_data="open_admin_panel")]
         ]
-        await query.edit_message_text("⚙️ **সিস্টেম সেটিংস:**\n(পরিবর্তন করতে বাটনে ক্লিক করুন)", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        await query.edit_message_text("⚙️ <b>সিস্টেম সেটিংস:</b>\n(পরিবর্তন করতে বাটনে ক্লিক করুন)", reply_markup=InlineKeyboardMarkup(kb), parse_mode='HTML')
 
     elif data == "set_task_reward":
         if not is_super: return
@@ -1134,7 +1121,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton("অন্যান্য (Misc)", callback_data="aui_cat_misc")],
             [InlineKeyboardButton("🔙 ব্যাক", callback_data="open_admin_panel")]
         ]
-        await query.edit_message_text("🎨 **বাটন এবং UI ম্যানেজমেন্ট:**", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        await query.edit_message_text("🎨 <b>বাটন এবং UI ম্যানেজমেন্ট:</b>", reply_markup=InlineKeyboardMarkup(kb), parse_mode='HTML')
 
     elif data == "aui_add_custom":
         if not is_super: return
@@ -1181,7 +1168,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 kb.append([InlineKeyboardButton(f"{status} {btn_name}", callback_data=f"aui_sel_{key}")])
         
         kb.append([InlineKeyboardButton("🔙 ব্যাক", callback_data="admin_ui_menu")])
-        await query.edit_message_text(f"🔘 **{cat.upper()} সেকশন বাটন:**", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        await query.edit_message_text(f"🔘 {cat.upper()} সেকশন বাটন:", reply_markup=InlineKeyboardMarkup(kb))
 
     elif data.startswith("aui_sel_"):
         if not is_super: return
@@ -1191,7 +1178,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         status_text = "Visible" if item.get("show", True) else "Hidden"
         toggle_action = "Hide" if item.get("show", True) else "Show"
         
-        text = f"🔧 **Edit Item:** `{key}`\n\n📝 Text: {item.get('text')}\n🔗 Link: {item.get('url', 'N/A')}\n👀 Status: {status_text}"
+        text = f"🔧 Edit Item: {key}\n\n📝 Text: {item.get('text')}\n🔗 Link: {item.get('url', 'N/A')}\n👀 Status: {status_text}"
         kb = [
             [InlineKeyboardButton("✏️ নাম পরিবর্তন (Text)", callback_data=f"aui_ren_{key}")],
             [InlineKeyboardButton(f"👁️ {toggle_action}", callback_data=f"aui_tog_{key}")],
@@ -1201,17 +1188,17 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if "url" in item or key.startswith("link_") or key == "btn_review_gen":
             kb.insert(1, [InlineKeyboardButton("🔗 লিংক পরিবর্তন", callback_data=f"aui_url_{key}")])
             
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb))
         
     elif data.startswith("aui_ren_"):
         key = data.replace("aui_ren_", "")
         await update_user_state(user_id, STATE_ADMIN_EDIT_UI_TEXT, temp_data={'target_key': key})
-        await query.edit_message_text(f"📝 `{key}` এর জন্য নতুন নাম লিখুন:", parse_mode='Markdown')
+        await query.edit_message_text(f"📝 {key} এর জন্য নতুন নাম লিখুন:")
 
     elif data.startswith("aui_url_"):
         key = data.replace("aui_url_", "")
         await update_user_state(user_id, STATE_ADMIN_EDIT_UI_URL, temp_data={'target_key': key})
-        await query.edit_message_text(f"🔗 `{key}` এর জন্য নতুন লিংক লিখুন:", parse_mode='Markdown')
+        await query.edit_message_text(f"🔗 {key} এর জন্য নতুন লিংক লিখুন:")
 
     elif data.startswith("aui_tog_"):
         key = data.replace("aui_tog_", "")
